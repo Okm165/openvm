@@ -101,3 +101,7 @@ path = "src/bin/revm_transfer.rs"
 [[bin]]
 name = "sha2_bench"
 path = "src/bin/sha2_bench.rs"
+
+[[bin]]
+name = "merkle_tree"
+path = "src/bin/merkle_tree.rs"
