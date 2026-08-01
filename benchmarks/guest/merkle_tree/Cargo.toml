@@ -1,0 +1,13 @@
+[workspace]
+
+[package]
+name = "openvm-merkle-tree-program"
+version = "2.0.1"
+edition = "2021"
+
+[dependencies]
+openvm = { git = "https://github.com/openvm-org/openvm.git", tag = "v2.0.1", features = ["std"] }
+openvm-sha2 = { git = "https://github.com/openvm-org/openvm.git", tag = "v2.0.1" }
+
+[features]
+default = []
