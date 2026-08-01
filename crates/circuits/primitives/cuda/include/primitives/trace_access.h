@@ -10,13 +10,15 @@ struct RowSlice {
 
     __device__ RowSlice(Fp *ptr, size_t stride) : ptr(ptr), stride(stride) {}
 
+    // Force 64-bit multiplication to prevent nvcc/hipcc strength-reduction bugs
+    // that corrupt wide-trace addresses (e.g. 903 cols × 2M rows × 4 = 7 GB).
+    // See https://github.com/stephenh-axiom-xyz/cuda-illegal.
+    __device__ __forceinline__ size_t col_offset(size_t col) const {
+        return static_cast<uint64_t>(col) * static_cast<uint64_t>(stride);
+    }
+
     __device__ __forceinline__ Fp &operator[](size_t column_index) const {
-        // While implementing tracegen for SHA256, we encountered what we believe to be an nvcc
-        // compiler bug. Occasionally, at various non-zero PTXAS optimization levels the compiler
-        // tries to replace this multiplication with a series of SHL, ADD, and AND instructions
-        // that we believe erroneously adds ~2^49 to the final address via an improper carry
-        // propagation. To read more, see https://github.com/stephenh-axiom-xyz/cuda-illegal.
-        return ptr[column_index * stride];
+        return ptr[col_offset(column_index)];
     }
 
     __device__ static RowSlice null() { return RowSlice(nullptr, 0); }
@@ -25,7 +27,7 @@ struct RowSlice {
 
     template <typename T>
     __device__ __forceinline__ void write(size_t column_index, T value) const {
-        ptr[column_index * stride] = value;
+        ptr[col_offset(column_index)] = value;
     }
 
     template <typename T>
@@ -33,7 +35,7 @@ struct RowSlice {
         const {
 #pragma unroll
         for (size_t i = 0; i < length; i++) {
-            ptr[(column_index + i) * stride] = values[i];
+            ptr[col_offset(column_index + i)] = values[i];
         }
     }
 
@@ -41,19 +43,19 @@ struct RowSlice {
     __device__ __forceinline__ void write_bits(size_t column_index, const T value) const {
 #pragma unroll
         for (size_t i = 0; i < sizeof(T) * 8; i++) {
-            ptr[(column_index + i) * stride] = (value >> i) & 1;
+            ptr[col_offset(column_index + i)] = (value >> i) & 1;
         }
     }
 
     __device__ __forceinline__ void fill_zero(size_t column_index_from, size_t length) const {
 #pragma unroll
         for (size_t i = 0, c = column_index_from; i < length; i++, c++) {
-            ptr[c * stride] = 0;
+            ptr[col_offset(c)] = 0;
         }
     }
 
     __device__ __forceinline__ RowSlice slice_from(size_t column_index) const {
-        return RowSlice(ptr + column_index * stride, stride);
+        return RowSlice(ptr + col_offset(column_index), stride);
     }
 
     __device__ __forceinline__ RowSlice shift_row(size_t n) const {
