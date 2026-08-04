@@ -1,8 +1,8 @@
 #include "launcher.cuh"
 #include "primitives/trace_access.h"
-#include <cub/device/device_scan.cuh>
 #include <cstddef>
 #include <cstdint>
+#include <cub/device/device_scan.cuh>
 
 /// Record representing a memory chunk with BLOCKS sub-blocks of cells.
 /// Matches the Rust-side repr(C) `PersistentBoundaryRecord` layout.
@@ -11,8 +11,8 @@
 /// field elements (Fp::asRaw()). All other fields (`address_space`, `ptr`,
 /// `timestamps`) are plain integers.
 template <size_t CHUNK, size_t BLOCKS> struct MemoryInventoryRecord {
-    uint32_t address_space; // plain integer
-    uint32_t ptr;           // plain integer (cell-level pointer)
+    uint32_t address_space;      // plain integer
+    uint32_t ptr;                // plain integer (cell-level pointer)
     uint32_t timestamps[BLOCKS]; // plain integers
     uint32_t values[CHUNK];      // Montgomery-encoded Fp values (Fp::asRaw())
 };
@@ -25,11 +25,7 @@ inline constexpr uint32_t DEFERRAL_AS = 4;
 using InRec = MemoryInventoryRecord<IN_BLOCK_SIZE, 1>;
 using OutRec = MemoryInventoryRecord<OUT_BLOCK_SIZE, 2>;
 
-__device__ inline bool same_output_block(
-    InRec const *in,
-    size_t lhs_idx,
-    size_t rhs_idx
-) {
+__device__ inline bool same_output_block(InRec const *in, size_t lhs_idx, size_t rhs_idx) {
     uint32_t lhs_as = in[lhs_idx].address_space;
     uint32_t rhs_as = in[rhs_idx].address_space;
     if (lhs_as != rhs_as) {
@@ -53,7 +49,7 @@ __device__ inline void read_initial_chunk(
     uint32_t addr_space_idx = address_space - 1;
     uint8_t const *mem = initial_mem[addr_space_idx];
     if (!mem) {
-        #pragma unroll
+#pragma unroll
         for (int i = 0; i < OUT_BLOCK_SIZE; ++i) {
             out_values[i] = 0;
         }
@@ -62,14 +58,14 @@ __device__ inline void read_initial_chunk(
     if (address_space == DEFERRAL_AS) {
         // F-type cells: 4 bytes per cell, already raw Montgomery u32
         uint32_t const *cells = reinterpret_cast<uint32_t const *>(mem) + chunk_ptr;
-        #pragma unroll
+#pragma unroll
         for (int i = 0; i < OUT_BLOCK_SIZE; ++i) {
             out_values[i] = cells[i];
         }
     } else {
         // U8 cells: 1 byte per cell, convert to Montgomery form
         size_t byte_offset = static_cast<size_t>(chunk_ptr);
-        #pragma unroll
+#pragma unroll
         for (int i = 0; i < OUT_BLOCK_SIZE; ++i) {
             out_values[i] = Fp(mem[byte_offset + i]).asRaw();
         }
@@ -105,7 +101,7 @@ __global__ void cukernel_build_candidates(
 
     // Overwrite touched block's values (already Montgomery-encoded in input records)
     uint32_t block_idx = (in[row_idx].ptr % OUT_BLOCK_SIZE) / IN_BLOCK_SIZE;
-    #pragma unroll
+#pragma unroll
     for (int i = 0; i < IN_BLOCK_SIZE; ++i) {
         rec.values[block_idx * IN_BLOCK_SIZE + i] = in[row_idx].values[i];
     }
@@ -114,7 +110,7 @@ __global__ void cukernel_build_candidates(
     // If two input records fall in the same chunk, overwrite the second block too
     if (row_idx + 1 < in_num_records && same_output_block(in, row_idx, row_idx + 1)) {
         uint32_t block_idx2 = (in[row_idx + 1].ptr % OUT_BLOCK_SIZE) / IN_BLOCK_SIZE;
-        #pragma unroll
+#pragma unroll
         for (int i = 0; i < IN_BLOCK_SIZE; ++i) {
             rec.values[block_idx2 * IN_BLOCK_SIZE + i] = in[row_idx + 1].values[i];
         }
@@ -133,7 +129,8 @@ __global__ void cukernel_scatter_compact(
     size_t *out_num_records
 ) {
     size_t row_idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (row_idx >= n) return;
+    if (row_idx >= n)
+        return;
     if (flags[row_idx]) {
         uint32_t out_idx = positions[row_idx];
         out[out_idx] = tmp_out[row_idx];
@@ -162,35 +159,21 @@ extern "C" int _inventory_merge_records(
     OutRec *out = reinterpret_cast<OutRec *>(d_out_records);
 
     cukernel_build_candidates<<<grid, block, 0, stream>>>(
-        in,
-        in_num_records,
-        d_initial_mem,
-        tmp_out,
-        d_flags
+        in, in_num_records, d_initial_mem, tmp_out, d_flags
     );
     if (int err = CHECK_KERNEL(); err) {
         return err;
     }
 
     cub::DeviceScan::ExclusiveSum(
-        d_temp_storage,
-        temp_storage_bytes,
-        d_flags,
-        d_positions,
-        in_num_records,
-        stream
+        d_temp_storage, temp_storage_bytes, d_flags, d_positions, in_num_records, stream
     );
     if (int err = CHECK_KERNEL(); err) {
         return err;
     }
 
     cukernel_scatter_compact<<<grid, block, 0, stream>>>(
-        tmp_out,
-        d_flags,
-        d_positions,
-        in_num_records,
-        out,
-        out_num_records
+        tmp_out, d_flags, d_positions, in_num_records, out, out_num_records
     );
     return CHECK_KERNEL();
 }
@@ -202,14 +185,7 @@ extern "C" int _inventory_merge_records_get_temp_bytes(
     cudaStream_t stream
 ) {
     size_t temp_bytes = 0;
-    cub::DeviceScan::ExclusiveSum(
-        nullptr,
-        temp_bytes,
-        d_flags,
-        d_flags,
-        in_num_records,
-        stream
-    );
+    cub::DeviceScan::ExclusiveSum(nullptr, temp_bytes, d_flags, d_flags, in_num_records, stream);
     *h_temp_bytes_out = temp_bytes;
     return CHECK_KERNEL();
 }
