@@ -21,26 +21,44 @@ use crate::{
 struct AppState {
     worker: Option<WorkerState>,
     cached_config: Option<CachedConfig>,
-    secret: Option<String>,
     proving_since: Option<std::time::Instant>,
     setup_fingerprint: Option<u64>,
 }
 
-// SAFETY: Single-threaded tokio runtime (current_thread) — state never crosses threads.
+// SAFETY: WorkerState holds GPU device pointers that are inherently !Send/!Sync.
+// This is sound because the worker binary uses a single-threaded tokio runtime
+// (Builder::new_current_thread()), so AppState never actually crosses thread boundaries.
+// Callers MUST NOT use create_router() with a multi-threaded runtime.
 unsafe impl Send for AppState {}
 unsafe impl Sync for AppState {}
 
-type SharedState = Arc<std::sync::Mutex<AppState>>;
+#[derive(Clone)]
+struct ServerContext {
+    state: Arc<std::sync::Mutex<AppState>>,
+    /// Pre-computed "Bearer {secret}" string, or None if auth is disabled.
+    expected_auth: Option<Arc<str>>,
+}
 
-/// Must be served on a single-threaded tokio runtime (current_thread).
+/// Creates the worker HTTP router. **Must** be served on a single-threaded
+/// tokio runtime (`Builder::new_current_thread()`) because `WorkerState` holds
+/// GPU device pointers that are !Send.
 pub fn create_router(secret: Option<String>) -> Router {
-    let state: SharedState = Arc::new(std::sync::Mutex::new(AppState {
-        worker: None,
-        cached_config: None,
-        secret,
-        proving_since: None,
-        setup_fingerprint: None,
-    }));
+    debug_assert!(
+        tokio::runtime::Handle::try_current()
+            .map(|h| h.runtime_flavor() == tokio::runtime::RuntimeFlavor::CurrentThread)
+            .unwrap_or(true),
+        "create_router must be called on a current_thread runtime (GPU state is !Send)"
+    );
+
+    let ctx = ServerContext {
+        state: Arc::new(std::sync::Mutex::new(AppState {
+            worker: None,
+            cached_config: None,
+            proving_since: None,
+            setup_fingerprint: None,
+        })),
+        expected_auth: secret.map(|s| Arc::from(format!("Bearer {}", s))),
+    };
 
     Router::new()
         .route("/health", get(health_handler))
@@ -51,14 +69,13 @@ pub fn create_router(secret: Option<String>) -> Router {
         .route("/release-gpu", post(release_gpu_handler))
         .route("/shutdown", post(shutdown_handler))
         .layer(axum::extract::DefaultBodyLimit::max(256 * 1024 * 1024))
-        .with_state(state)
+        .with_state(ctx)
 }
 
-fn check_auth(secret: &Option<String>, headers: &HeaderMap) -> Result<(), StatusCode> {
-    if let Some(ref expected_secret) = secret {
-        let expected = format!("Bearer {}", expected_secret);
+fn check_auth(expected_auth: &Option<Arc<str>>, headers: &HeaderMap) -> Result<(), StatusCode> {
+    if let Some(ref expected) = expected_auth {
         match headers.get("authorization") {
-            Some(v) if v.to_str().unwrap_or("") == expected => Ok(()),
+            Some(v) if v.as_bytes() == expected.as_bytes() => Ok(()),
             _ => Err(StatusCode::UNAUTHORIZED),
         }
     } else {
@@ -66,9 +83,8 @@ fn check_auth(secret: &Option<String>, headers: &HeaderMap) -> Result<(), Status
     }
 }
 
-fn require_auth(state: &SharedState, headers: &HeaderMap) -> Option<axum::response::Response> {
-    let guard = state.lock().unwrap();
-    if let Err(status) = check_auth(&guard.secret, headers) {
+fn require_auth(ctx: &ServerContext, headers: &HeaderMap) -> Option<axum::response::Response> {
+    if let Err(status) = check_auth(&ctx.expected_auth, headers) {
         Some(
             (
                 status,
@@ -85,8 +101,11 @@ fn require_auth(state: &SharedState, headers: &HeaderMap) -> Option<axum::respon
 }
 
 fn system_resources_summary() -> Option<String> {
+    use std::sync::OnceLock;
+    static GPU_VENDOR: OnceLock<Option<String>> = OnceLock::new();
+
     let mut parts = Vec::new();
-    if let Ok(v) = std::env::var("GPU_VENDOR") {
+    if let Some(v) = GPU_VENDOR.get_or_init(|| std::env::var("GPU_VENDOR").ok()) {
         parts.push(format!("gpu={}", v));
     }
     if let Ok(info) = sys_info::mem_info() {
@@ -99,9 +118,9 @@ fn system_resources_summary() -> Option<String> {
     }
 }
 
-async fn health_handler(State(state): State<SharedState>) -> impl IntoResponse {
+async fn health_handler(State(ctx): State<ServerContext>) -> impl IntoResponse {
     let (ready, proving_elapsed) = {
-        let guard = state.lock().unwrap();
+        let guard = ctx.state.lock().unwrap();
         let ready = guard.worker.is_some();
         let elapsed = guard.proving_since.map(|t| t.elapsed());
         (ready, elapsed)
@@ -124,6 +143,8 @@ async fn health_handler(State(state): State<SharedState>) -> impl IntoResponse {
         version: Some(env!("CARGO_PKG_VERSION").to_string()),
     })
 }
+
+type SharedState = Arc<std::sync::Mutex<AppState>>;
 
 fn try_warm_resetup(state: &SharedState, fingerprint: u64) -> bool {
     let cached = {
@@ -152,16 +173,16 @@ fn try_warm_resetup(state: &SharedState, fingerprint: u64) -> bool {
 }
 
 async fn setup_check_handler(
-    State(state): State<SharedState>,
+    State(ctx): State<ServerContext>,
     headers: HeaderMap,
     Json(req): Json<SetupCheckRequest>,
 ) -> impl IntoResponse {
-    if let Some(resp) = require_auth(&state, &headers) {
+    if let Some(resp) = require_auth(&ctx, &headers) {
         return resp;
     }
 
     {
-        let guard = state.lock().unwrap();
+        let guard = ctx.state.lock().unwrap();
         if guard.worker.is_some() && guard.setup_fingerprint == Some(req.fingerprint) {
             return Json(SetupCheckResponse {
                 needs_payload: false,
@@ -170,20 +191,20 @@ async fn setup_check_handler(
         }
     }
 
-    let needs_payload = !try_warm_resetup(&state, req.fingerprint);
+    let needs_payload = !try_warm_resetup(&ctx.state, req.fingerprint);
     Json(SetupCheckResponse { needs_payload }).into_response()
 }
 
 async fn setup_handler(
-    State(state): State<SharedState>,
+    State(ctx): State<ServerContext>,
     headers: HeaderMap,
     body: Bytes,
 ) -> impl IntoResponse {
-    if let Some(resp) = require_auth(&state, &headers) {
+    if let Some(resp) = require_auth(&ctx, &headers) {
         return resp;
     }
     {
-        let guard = state.lock().unwrap();
+        let guard = ctx.state.lock().unwrap();
         if guard.proving_since.is_some() {
             return (
                 StatusCode::CONFLICT,
@@ -200,7 +221,7 @@ async fn setup_handler(
 
     let fingerprint = crate::types::SetupPayload::content_fingerprint(&body);
     {
-        let guard = state.lock().unwrap();
+        let guard = ctx.state.lock().unwrap();
         if guard.worker.is_some() && guard.setup_fingerprint == Some(fingerprint) {
             return (
                 StatusCode::OK,
@@ -212,7 +233,7 @@ async fn setup_handler(
         }
     }
 
-    if try_warm_resetup(&state, fingerprint) {
+    if try_warm_resetup(&ctx.state, fingerprint) {
         return (
             StatusCode::OK,
             Json(SetupResponse {
@@ -238,13 +259,13 @@ async fn setup_handler(
     };
 
     {
-        let mut guard = state.lock().unwrap();
+        let mut guard = ctx.state.lock().unwrap();
         guard.worker = None;
     }
 
     match WorkerState::from_setup(payload) {
         Ok(worker) => {
-            let mut guard = state.lock().unwrap();
+            let mut guard = ctx.state.lock().unwrap();
             guard.worker = Some(worker);
             guard.setup_fingerprint = Some(fingerprint);
             (
@@ -257,7 +278,7 @@ async fn setup_handler(
         }
         Err(e) => {
             error!("Worker setup failed: {:?}", e);
-            let mut guard = state.lock().unwrap();
+            let mut guard = ctx.state.lock().unwrap();
             guard.setup_fingerprint = None;
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -272,11 +293,11 @@ async fn setup_handler(
 }
 
 async fn prove_segments_handler(
-    State(state): State<SharedState>,
+    State(ctx): State<ServerContext>,
     headers: HeaderMap,
     body: Bytes,
 ) -> impl IntoResponse {
-    if let Some(resp) = require_auth(&state, &headers) {
+    if let Some(resp) = require_auth(&ctx, &headers) {
         return resp;
     }
 
@@ -298,20 +319,41 @@ async fn prove_segments_handler(
     };
 
     let worker = {
-        let mut guard = state.lock().unwrap();
+        let mut guard = ctx.state.lock().unwrap();
         guard.proving_since = Some(std::time::Instant::now());
         match guard.worker.take() {
             Some(w) => w,
             None => {
-                guard.proving_since = None;
-                return (
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    Json(ErrorResponse {
-                        error: "worker not ready (call /setup first)".to_string(),
-                        retryable: true,
-                    }),
-                )
-                    .into_response();
+                // Attempt warm re-setup from cached config (handles retry after OOM/failure)
+                if let Some(cached) = guard.cached_config.take() {
+                    drop(guard);
+                    match WorkerState::from_cached(cached) {
+                        Ok(w) => w,
+                        Err(e) => {
+                            error!("Warm re-setup for retry failed: {:?}", e);
+                            let mut guard = ctx.state.lock().unwrap();
+                            guard.proving_since = None;
+                            return (
+                                StatusCode::SERVICE_UNAVAILABLE,
+                                Json(ErrorResponse {
+                                    error: "worker not ready and re-setup failed".to_string(),
+                                    retryable: false,
+                                }),
+                            )
+                                .into_response();
+                        }
+                    }
+                } else {
+                    guard.proving_since = None;
+                    return (
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        Json(ErrorResponse {
+                            error: "worker not ready (call /setup first)".to_string(),
+                            retryable: true,
+                        }),
+                    )
+                        .into_response();
+                }
             }
         }
     };
@@ -335,7 +377,7 @@ async fn prove_segments_handler(
     };
 
     {
-        let mut guard = state.lock().unwrap();
+        let mut guard = ctx.state.lock().unwrap();
         guard.proving_since = None;
         if let Some(cached) = cached_config {
             guard.cached_config = Some(cached);
@@ -388,15 +430,15 @@ async fn prove_segments_handler(
 }
 
 async fn release_gpu_handler(
-    State(state): State<SharedState>,
+    State(ctx): State<ServerContext>,
     headers: HeaderMap,
 ) -> impl IntoResponse {
-    if let Some(resp) = require_auth(&state, &headers) {
+    if let Some(resp) = require_auth(&ctx, &headers) {
         return resp;
     }
 
     let had_state = {
-        let mut guard = state.lock().unwrap();
+        let mut guard = ctx.state.lock().unwrap();
         let had = guard.worker.is_some() || guard.cached_config.is_some();
         guard.worker = None;
         guard.cached_config = None;
@@ -415,10 +457,10 @@ async fn release_gpu_handler(
 }
 
 async fn shutdown_handler(
-    State(state): State<SharedState>,
+    State(ctx): State<ServerContext>,
     headers: HeaderMap,
 ) -> impl IntoResponse {
-    if let Some(resp) = require_auth(&state, &headers) {
+    if let Some(resp) = require_auth(&ctx, &headers) {
         return resp;
     }
     info!("Shutdown requested — exiting process to release all GPU memory");
@@ -435,11 +477,11 @@ async fn shutdown_handler(
 
 #[cfg(feature = "cuda")]
 async fn grind_handler(
-    State(state): State<SharedState>,
+    State(ctx): State<ServerContext>,
     headers: HeaderMap,
     Json(req): Json<crate::types::GrindRequest>,
 ) -> impl IntoResponse {
-    if let Some(resp) = require_auth(&state, &headers) {
+    if let Some(resp) = require_auth(&ctx, &headers) {
         return resp;
     }
 
@@ -475,7 +517,7 @@ async fn grind_handler(
 
 #[cfg(not(feature = "cuda"))]
 async fn grind_handler(
-    State(_state): State<SharedState>,
+    State(_ctx): State<ServerContext>,
     _headers: HeaderMap,
     Json(_req): Json<crate::types::GrindRequest>,
 ) -> impl IntoResponse {
