@@ -155,8 +155,8 @@ crate_features() {
 
 ERRORS=0
 
-# --- Step 1: Format check ---
-info "Step 1/3: cargo +nightly fmt --all -- --check"
+# --- Step 1: Rust format check ---
+info "Step 1/4: cargo +nightly fmt --all -- --check"
 if cargo +nightly fmt --all -- --check; then
     pass "formatting"
 else
@@ -164,8 +164,32 @@ else
     ERRORS=$((ERRORS + 1))
 fi
 
-# --- Step 2: Clippy on changed crates ---
-info "Step 2/3: clippy on changed crates"
+# --- Step 2: CUDA/C++ format check ---
+CUDA_CHANGED=$(echo "$CHANGED_FILES" | grep -E '\.(cu|cuh|h)$' || true)
+if [ -n "$CUDA_CHANGED" ] && command -v clang-format &>/dev/null; then
+    info "Step 2/4: clang-format --dry-run --Werror on changed CUDA/C++ files"
+    CUDA_FMT_FAIL=0
+    while IFS= read -r f; do
+        [ -f "$f" ] || continue
+        if ! clang-format --dry-run --Werror "$f" 2>/dev/null; then
+            fail "  $f"
+            CUDA_FMT_FAIL=1
+        fi
+    done <<< "$CUDA_CHANGED"
+    if [ "$CUDA_FMT_FAIL" -eq 0 ]; then
+        pass "clang-format ($(echo "$CUDA_CHANGED" | wc -l) files)"
+    else
+        fail "clang-format — run: clang-format -i \$(git diff --name-only $MERGE_BASE HEAD | grep -E '\\.(cu|cuh|h)\$')"
+        ERRORS=$((ERRORS + 1))
+    fi
+elif [ -n "$CUDA_CHANGED" ]; then
+    warn "clang-format not found — skipping CUDA format check"
+else
+    info "Step 2/4: no CUDA/C++ files changed — skipping"
+fi
+
+# --- Step 3: Clippy on changed crates ---
+info "Step 3/4: clippy on changed crates"
 for i in "${!CRATE_NAMES[@]}"; do
     name="${CRATE_NAMES[$i]}"
     dir="${CRATE_DIRS[$i]}"
@@ -184,8 +208,8 @@ for i in "${!CRATE_NAMES[@]}"; do
     fi
 done
 
-# --- Step 3: Tests on changed crates ---
-info "Step 3/3: tests on changed crates"
+# --- Step 4: Tests on changed crates ---
+info "Step 4/4: tests on changed crates"
 
 # Detect test runner
 if command -v cargo-nextest &>/dev/null; then
