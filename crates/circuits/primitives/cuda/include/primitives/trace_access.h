@@ -3,6 +3,14 @@
 #include "fp.h"
 #include <cstddef>
 
+/// Compute col-major offset with forced 64-bit multiplication.
+/// Prevents nvcc/hipcc strength-reduction bugs that corrupt addresses
+/// on wide traces (e.g. 903 cols × 2M rows × 4 bytes = 7 GB).
+/// Use this for any device-code `col * stride` that bypasses RowSlice.
+__device__ __forceinline__ size_t trace_col_offset(size_t col, size_t stride) {
+    return static_cast<uint64_t>(col) * static_cast<uint64_t>(stride);
+}
+
 /// A RowSlice is a contiguous section of a row in col-based trace.
 struct RowSlice {
     Fp *ptr;
@@ -31,8 +39,11 @@ struct RowSlice {
     }
 
     template <typename T>
-    __device__ __forceinline__ void write_array(size_t column_index, size_t length, const T *values)
-        const {
+    __device__ __forceinline__ void write_array(
+        size_t column_index,
+        size_t length,
+        const T *values
+    ) const {
 #pragma unroll
         for (size_t i = 0; i < length; i++) {
             ptr[col_offset(column_index + i)] = values[i];
