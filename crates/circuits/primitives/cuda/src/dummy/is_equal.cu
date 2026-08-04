@@ -38,7 +38,13 @@ __global__ void cukernel_isequal_array_tracegen(
     IsEqualArray::generate_subrow(array_len, x, y, diff_inv_marker, out);
 }
 
-extern "C" int _isequal_tracegen(Fp *output, Fp *inputs_x, Fp *inputs_y, uint32_t n, cudaStream_t stream) {
+extern "C" int _isequal_tracegen(
+    Fp *output,
+    Fp *inputs_x,
+    Fp *inputs_y,
+    uint32_t n,
+    cudaStream_t stream
+) {
     auto [grid, block] = kernel_launch_params(n);
     cukernel_isequal_tracegen<<<grid, block, 0, stream>>>(output, inputs_x, inputs_y, n);
     return CHECK_KERNEL();
@@ -53,6 +59,8 @@ extern "C" int _isequal_array_tracegen(
     cudaStream_t stream
 ) {
     auto [grid, block] = kernel_launch_params(n);
-    cukernel_isequal_array_tracegen<<<grid, block, 0, stream>>>(output, inputs_x, inputs_y, array_len, n);
+    cukernel_isequal_array_tracegen<<<grid, block, 0, stream>>>(
+        output, inputs_x, inputs_y, array_len, n
+    );
     return CHECK_KERNEL();
 }

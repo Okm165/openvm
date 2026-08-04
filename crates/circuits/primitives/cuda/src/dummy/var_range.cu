@@ -40,6 +40,8 @@ extern "C" int _var_range_dummy_tracegen(
     cudaStream_t stream
 ) {
     auto [grid, block] = kernel_launch_params(data_len);
-    var_range_dummy_tracegen<<<grid, block, 0, stream>>>(d_data, d_trace, d_rc_count, data_len, rc_num_bins);
+    var_range_dummy_tracegen<<<grid, block, 0, stream>>>(
+        d_data, d_trace, d_rc_count, data_len, rc_num_bins
+    );
     return CHECK_KERNEL();
 }

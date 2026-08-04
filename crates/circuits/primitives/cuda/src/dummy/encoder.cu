@@ -33,7 +33,9 @@ extern "C" int _encoder_tracegen(
     uint32_t k = compute_k(num_flags, max_degree, reserve_invalid);
     assert(k == expected_k);
 
-    cukernel_encoder_tracegen<<<grid, block, 0, stream>>>(trace, num_flags, max_degree, reserve_invalid, k);
+    cukernel_encoder_tracegen<<<grid, block, 0, stream>>>(
+        trace, num_flags, max_degree, reserve_invalid, k
+    );
 
     return CHECK_KERNEL();
 }

@@ -36,4 +36,3 @@ extern "C" int _range_tuple_checker_tracegen(
     );
     return CHECK_KERNEL();
 }
-

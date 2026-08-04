@@ -31,8 +31,8 @@ __global__ void bitwise_op_lookup_tracegen(
         }
 
         uint32_t mult_range_val = count[row_idx] + (cpu_count ? cpu_count[row_idx] : 0);
-        uint32_t mult_xor_val = count[row_idx + num_rows] + 
-                                (cpu_count ? cpu_count[row_idx + num_rows] : 0);
+        uint32_t mult_xor_val =
+            count[row_idx + num_rows] + (cpu_count ? cpu_count[row_idx + num_rows] : 0);
 
         RowSlice row(trace + row_idx, num_rows);
         COL_WRITE_ARRAY(row, BitwiseOperationLookupCols, x_bits, x_bits_array);
