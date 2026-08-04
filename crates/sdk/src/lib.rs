@@ -832,16 +832,6 @@ where
     }
 
     #[cfg(feature = "evm-verify")]
-    /// Generates Solidity verifier artifacts from a pre-existing Halo2 proving key,
-    /// bypassing the lazy keygen in [`Self::halo2_prover`].
-    pub fn generate_halo2_verifier_solidity_from_pk(
-        &self,
-        halo2_pk: &keygen::Halo2ProvingKey,
-    ) -> Result<types::EvmHalo2Verifier, SdkError> {
-        solidity::generate_halo2_verifier_solidity(halo2_pk, &self.halo2_params_reader)
-    }
-
-    #[cfg(feature = "evm-verify")]
     /// Generates Solidity verifier artifacts under `src/{version_name}` in the solc source map.
     ///
     /// Solidity embeds source metadata in bytecode, so `version_name` should match the directory
