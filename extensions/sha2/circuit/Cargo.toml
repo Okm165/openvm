@@ -29,7 +29,7 @@ derive-new.workspace = true
 derive_more = { workspace = true, features = ["from"] }
 rand.workspace = true
 serde.workspace = true
-sha2 = { version = "0.10", features = ["compress"] }
+sha2 = { version = "0.11" }
 ndarray = { workspace = true, default-features = false }
 cfg-if.workspace = true
 itertools = { workspace = true }

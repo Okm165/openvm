@@ -14,7 +14,7 @@ openvm-circuit-primitives = { workspace = true }
 openvm-stark-backend = { workspace = true }
 openvm-circuit-primitives-derive = { workspace = true }
 
-sha2 = { workspace = true, features = ["compress"] }
+sha2 = { workspace = true }
 rand.workspace = true
 ndarray.workspace = true
 num_enum = { workspace = true }
