@@ -1,8 +1,8 @@
 #pragma once
 
 #include "launcher.cuh"
-#include "utils.cuh"
 #include "trace_access.h"
+#include "utils.cuh"
 
 /**
  * @file histogram.cuh
