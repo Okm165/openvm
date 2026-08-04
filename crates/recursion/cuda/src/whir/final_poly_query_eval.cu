@@ -96,7 +96,8 @@ __global__ void final_poly_query_eval_tracegen(
     const bool is_first_in_round = is_first_in_query && query_idx == 0;
     const bool is_first_in_proof = is_first_in_round && whir_round_idx == 0;
 
-    const size_t is_same_phase = eval_idx + 1 < ((row_in_query < eq_phase_len) ? num_alphas : final_poly_len);
+    const size_t is_same_phase =
+        eval_idx + 1 < ((row_in_query < eq_phase_len) ? num_alphas : final_poly_len);
     const bool is_same_query = is_same_phase || phase_idx == 0;
     const bool is_same_round = is_same_query || query_idx < num_in_domain_queries;
     const bool is_same_proof = is_same_round || whir_round_idx + 1 < num_whir_rounds;
@@ -115,10 +116,7 @@ __global__ void final_poly_query_eval_tracegen(
     COL_WRITE_VALUE(row, FinalPolyQueryEvalCols, is_first_in_query, is_first_in_query);
     COL_WRITE_VALUE(row, FinalPolyQueryEvalCols, is_first_in_phase, is_first_in_phase);
     COL_WRITE_VALUE(
-        row,
-        FinalPolyQueryEvalCols,
-        is_last_round,
-        whir_round_idx + 1 == num_whir_rounds
+        row, FinalPolyQueryEvalCols, is_last_round, whir_round_idx + 1 == num_whir_rounds
     );
     COL_WRITE_VALUE(row, FinalPolyQueryEvalCols, is_query_zero, query_idx == 0);
     COL_WRITE_VALUE(row, FinalPolyQueryEvalCols, do_carry, do_carry);
@@ -127,24 +125,9 @@ __global__ void final_poly_query_eval_tracegen(
     COL_WRITE_ARRAY(row, FinalPolyQueryEvalCols, alpha, record.alpha.elems);
     COL_WRITE_ARRAY(row, FinalPolyQueryEvalCols, gamma, gamma.elems);
     COL_WRITE_ARRAY(row, FinalPolyQueryEvalCols, gamma_pow, record.gamma_pow.elems);
-    COL_WRITE_ARRAY(
-        row,
-        FinalPolyQueryEvalCols,
-        final_poly_coeff,
-        record.final_poly_coeff.elems
-    );
-    COL_WRITE_ARRAY(
-        row,
-        FinalPolyQueryEvalCols,
-        final_value_acc,
-        record.final_value_acc.elems
-    );
-    COL_WRITE_ARRAY(
-        row,
-        FinalPolyQueryEvalCols,
-        gamma_eq_acc,
-        record.gamma_eq_acc.elems
-    );
+    COL_WRITE_ARRAY(row, FinalPolyQueryEvalCols, final_poly_coeff, record.final_poly_coeff.elems);
+    COL_WRITE_ARRAY(row, FinalPolyQueryEvalCols, final_value_acc, record.final_value_acc.elems);
+    COL_WRITE_ARRAY(row, FinalPolyQueryEvalCols, gamma_eq_acc, record.gamma_eq_acc.elems);
     COL_WRITE_ARRAY(row, FinalPolyQueryEvalCols, horner_acc, record.horner_acc.elems);
 }
 
