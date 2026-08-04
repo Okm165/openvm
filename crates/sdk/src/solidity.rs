@@ -33,7 +33,7 @@ alloy_sol_types::sol! {
 
 /// Generate the EVM Halo2 verifier Solidity contract, compile it with solc, and return
 /// the verifier artifact.
-pub(crate) fn generate_halo2_verifier_solidity(
+pub fn generate_halo2_verifier_solidity(
     halo2_pk: &crate::keygen::Halo2ProvingKey,
     halo2_params_reader: &crate::halo2_params::CacheHalo2ParamsReader,
 ) -> Result<EvmHalo2Verifier, SdkError> {
