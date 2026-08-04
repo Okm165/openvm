@@ -145,6 +145,9 @@ impl DistributedProver {
         }
         crate::release_cuda_memory();
         if heavy_aggregation {
+            // Allow GPU memory pages to be reclaimed by the OS/driver before starting
+            // CPU-heavy aggregation. On AMD HIP the VPMM defers cross-process page
+            // reclamation; on NVIDIA this is instantaneous but the sleep is harmless.
             tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
         }
         info!(
