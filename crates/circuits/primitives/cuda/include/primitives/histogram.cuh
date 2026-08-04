@@ -24,6 +24,9 @@ struct Histogram {
 
     __device__ void add_count(uint32_t idx) {
         if (idx < num_bins) {
+#if defined(__HIPCC__)
+            atomicAdd(&global_hist[idx], 1u);
+#else
             // Warp-level deduplicated atomicAdd
             auto curr_mask = __activemask();
             auto same_mask = __match_any_sync(curr_mask, idx);
@@ -33,6 +36,7 @@ struct Histogram {
             if ((threadIdx.x & WARP_MASK) == leader) {
                 atomicAdd(&global_hist[idx], __popc(same_mask));
             }
+#endif
         }
     }
 };

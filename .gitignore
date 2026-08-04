@@ -18,6 +18,7 @@ rustc-*
 
 # IDE directories
 .vscode/
+.cursor/
 .zed/
 
 # Bench metrics

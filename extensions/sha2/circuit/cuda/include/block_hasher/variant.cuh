@@ -186,14 +186,14 @@ struct Sha256Variant : Sha2VariantBase<uint32_t, 32, 16, 4, 64, 8, 5, 64> {
     static constexpr int SIGMA1_SHR = 10;
 
     __device__ __host__ static inline Word K(size_t i) {
-#ifdef __CUDA_ARCH__
+#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
         return SHA256_K_DEV[i];
 #else
         return SHA256_K_HOST[i];
 #endif
     }
     __device__ __host__ static inline Word H(size_t i) {
-#ifdef __CUDA_ARCH__
+#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
         return SHA256_H_DEV[i];
 #else
         return SHA256_H_HOST[i];
@@ -217,14 +217,14 @@ struct Sha512Variant : Sha2VariantBase<uint64_t, 64, 16, 4, 80, 8, 6, 128> {
     static constexpr int SIGMA1_SHR = 6;
 
     __device__ __host__ static inline Word K(size_t i) {
-#ifdef __CUDA_ARCH__
+#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
         return SHA512_K_DEV[i];
 #else
         return SHA512_K_HOST[i];
 #endif
     }
     __device__ __host__ static inline Word H(size_t i) {
-#ifdef __CUDA_ARCH__
+#if defined(__CUDA_ARCH__) || defined(__HIP_DEVICE_COMPILE__)
         return SHA512_H_DEV[i];
 #else
         return SHA512_H_HOST[i];
