@@ -181,7 +181,8 @@ __global__ void stacking_claims_zero_padding_accums(
 
 #pragma unroll
     for (uint32_t i = 0; i < D_EF; i++) {
-        row[final_s_eval_col + i] = row[final_s_eval_col + i] - last_valid_row[final_s_eval_col + i];
+        row[final_s_eval_col + i] =
+            row[final_s_eval_col + i] - last_valid_row[final_s_eval_col + i];
         row[whir_claim_col + i] = row[whir_claim_col + i] - last_valid_row[whir_claim_col + i];
     }
 }
@@ -234,19 +235,21 @@ extern "C" int _stacking_claims_tracegen(
              PtrArray<FpExt, NUM_PROOFS>(d_mu_pows),
              d_records
         );
-        {
-            int ret = CHECK_KERNEL();
-            if (ret) return ret;
-            Fp *d_proof_idx = d_trace + COL_INDEX(StackingClaimsCols, proof_idx) * height;
-            Fp *d_claim_accums = d_trace + COL_INDEX(StackingClaimsCols, final_s_eval) * height;
-            ret = prefix_scan_by_key_n_arrays<2 * D_EF>(
-                d_proof_idx, d_claim_accums, height, d_temp_buffer, temp_bytes, FpEqual{}, stream
-            );
-            if (ret) return ret;
-        }
-        stacking_claims_zero_padding_accums<NUM_PROOFS><<<grid, block, 0, stream>>>(
+         {
+             int ret = CHECK_KERNEL();
+             if (ret)
+                 return ret;
+             Fp *d_proof_idx = d_trace + COL_INDEX(StackingClaimsCols, proof_idx) * height;
+             Fp *d_claim_accums = d_trace + COL_INDEX(StackingClaimsCols, final_s_eval) * height;
+             ret = prefix_scan_by_key_n_arrays<2 * D_EF>(
+                 d_proof_idx, d_claim_accums, height, d_temp_buffer, temp_bytes, FpEqual{}, stream
+             );
+             if (ret)
+                 return ret;
+         } stacking_claims_zero_padding_accums<NUM_PROOFS>
+         <<<grid, block, 0, stream>>>(
              d_trace, height, Array<uint32_t, NUM_PROOFS>(h_row_bounds), d_records
-        );),
+         );),
         1,
         2,
         3,

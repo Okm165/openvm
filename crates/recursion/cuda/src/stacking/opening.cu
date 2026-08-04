@@ -194,12 +194,7 @@ extern "C" int _opening_claims_tracegen_temp_bytes(
     Fp *d_last_for_claim = d_trace + COL_INDEX(OpeningClaimsCols, is_last_for_claim) * height;
     size_t exclusive_scan_temp_bytes;
     cub::DeviceScan::ExclusiveSum(
-        nullptr,
-        exclusive_scan_temp_bytes,
-        d_last_for_claim,
-        d_keys_buffer,
-        height,
-        stream
+        nullptr, exclusive_scan_temp_bytes, d_last_for_claim, d_keys_buffer, height, stream
     );
     int ret = CHECK_KERNEL();
     if (ret) {
