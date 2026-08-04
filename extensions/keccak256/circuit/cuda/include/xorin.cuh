@@ -1,9 +1,9 @@
 #pragma once
 
-#include <cstddef>
-#include <cstdint>
 #include "primitives/constants.h"
 #include "system/memory/offline_checker.cuh"
+#include <cstddef>
+#include <cstdint>
 
 namespace xorin {
 
@@ -12,8 +12,7 @@ inline constexpr size_t XORIN_WORD_SIZE = riscv::RV32_REGISTER_NUM_LIMBS;
 inline constexpr size_t XORIN_NUM_WORDS = XORIN_RATE_BYTES / XORIN_WORD_SIZE;
 inline constexpr size_t XORIN_REGISTER_READS = 3;
 
-template <typename T>
-struct XorinInstructionCols {
+template <typename T> struct XorinInstructionCols {
     T pc;
     T is_enabled;
     T buffer_reg_ptr;
@@ -28,24 +27,21 @@ struct XorinInstructionCols {
     T start_timestamp;
 };
 
-template <typename T>
-struct XorinSpongeCols {
+template <typename T> struct XorinSpongeCols {
     T is_padding_bytes[XORIN_NUM_WORDS];
     T preimage_buffer_bytes[XORIN_RATE_BYTES];
     T input_bytes[XORIN_RATE_BYTES];
     T postimage_buffer_bytes[XORIN_RATE_BYTES];
 };
 
-template <typename T>
-struct XorinMemoryCols {
+template <typename T> struct XorinMemoryCols {
     MemoryReadAuxCols<T> register_aux_cols[XORIN_REGISTER_READS];
     MemoryReadAuxCols<T> input_bytes_read_aux_cols[XORIN_NUM_WORDS];
     MemoryReadAuxCols<T> buffer_bytes_read_aux_cols[XORIN_NUM_WORDS];
     MemoryWriteAuxCols<T, XORIN_WORD_SIZE> buffer_bytes_write_aux_cols[XORIN_NUM_WORDS];
 };
 
-template <typename T>
-struct XorinVmCols {
+template <typename T> struct XorinVmCols {
     XorinSpongeCols<T> sponge;
     XorinInstructionCols<T> instruction;
     XorinMemoryCols<T> mem_oc;
