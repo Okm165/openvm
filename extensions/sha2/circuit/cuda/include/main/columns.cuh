@@ -46,71 +46,72 @@ template <typename V> struct Sha2MainLayout {
     static constexpr size_t WIDTH = sizeof(Sha2MainCols<V, uint8_t>);
 };
 
-#define SHA2_MAIN_COL_INDEX_V(V, STRUCT, FIELD)                                                     \
+#define SHA2_MAIN_COL_INDEX_V(V, STRUCT, FIELD)                                                    \
     (reinterpret_cast<size_t>(&(reinterpret_cast<STRUCT<V, uint8_t> *>(0)->FIELD)))
-#define SHA2_MAIN_COL_INDEX_PLAIN(STRUCT, FIELD)                                                    \
+#define SHA2_MAIN_COL_INDEX_PLAIN(STRUCT, FIELD)                                                   \
     (reinterpret_cast<size_t>(&(reinterpret_cast<STRUCT<uint8_t> *>(0)->FIELD)))
 
-#define SHA2_MAIN_COL_ARRAY_LEN_V(V, STRUCT, FIELD)                                                 \
+#define SHA2_MAIN_COL_ARRAY_LEN_V(V, STRUCT, FIELD)                                                \
     (sizeof((reinterpret_cast<STRUCT<V, uint8_t> *>(0)->FIELD)))
-#define SHA2_MAIN_COL_ARRAY_LEN_PLAIN(STRUCT, FIELD)                                                \
+#define SHA2_MAIN_COL_ARRAY_LEN_PLAIN(STRUCT, FIELD)                                               \
     (sizeof((reinterpret_cast<STRUCT<uint8_t> *>(0)->FIELD)))
 
-#define SHA2_MAIN_WRITE_VALUE_V(V, ROW, STRUCT, FIELD, VALUE)                                       \
+#define SHA2_MAIN_WRITE_VALUE_V(V, ROW, STRUCT, FIELD, VALUE)                                      \
     (ROW).write(SHA2_MAIN_COL_INDEX_V(V, STRUCT, FIELD), VALUE)
-#define SHA2_MAIN_WRITE_VALUE_PLAIN(ROW, STRUCT, FIELD, VALUE)                                      \
+#define SHA2_MAIN_WRITE_VALUE_PLAIN(ROW, STRUCT, FIELD, VALUE)                                     \
     (ROW).write(SHA2_MAIN_COL_INDEX_PLAIN(STRUCT, FIELD), VALUE)
 
-#define SHA2_MAIN_WRITE_ARRAY_V(V, ROW, STRUCT, FIELD, VALUES)                                      \
-    (ROW).write_array(                                                                              \
-        SHA2_MAIN_COL_INDEX_V(V, STRUCT, FIELD),                                                    \
-        SHA2_MAIN_COL_ARRAY_LEN_V(V, STRUCT, FIELD),                                                \
-        VALUES                                                                                      \
+#define SHA2_MAIN_WRITE_ARRAY_V(V, ROW, STRUCT, FIELD, VALUES)                                     \
+    (ROW).write_array(                                                                             \
+        SHA2_MAIN_COL_INDEX_V(V, STRUCT, FIELD),                                                   \
+        SHA2_MAIN_COL_ARRAY_LEN_V(V, STRUCT, FIELD),                                               \
+        VALUES                                                                                     \
     )
-#define SHA2_MAIN_WRITE_ARRAY_PLAIN(ROW, STRUCT, FIELD, VALUES)                                     \
-    (ROW).write_array(                                                                              \
-        SHA2_MAIN_COL_INDEX_PLAIN(STRUCT, FIELD),                                                   \
-        SHA2_MAIN_COL_ARRAY_LEN_PLAIN(STRUCT, FIELD),                                               \
-        VALUES                                                                                      \
+#define SHA2_MAIN_WRITE_ARRAY_PLAIN(ROW, STRUCT, FIELD, VALUES)                                    \
+    (ROW).write_array(                                                                             \
+        SHA2_MAIN_COL_INDEX_PLAIN(STRUCT, FIELD),                                                  \
+        SHA2_MAIN_COL_ARRAY_LEN_PLAIN(STRUCT, FIELD),                                              \
+        VALUES                                                                                     \
     )
 
-#define SHA2_MAIN_FILL_ZERO_V(V, ROW, STRUCT, FIELD)                                                \
-    (ROW).fill_zero(SHA2_MAIN_COL_INDEX_V(V, STRUCT, FIELD), SHA2_MAIN_COL_ARRAY_LEN_V(V, STRUCT, FIELD))
-#define SHA2_MAIN_SLICE_FROM_V(V, ROW, STRUCT, FIELD)                                               \
+#define SHA2_MAIN_FILL_ZERO_V(V, ROW, STRUCT, FIELD)                                               \
+    (ROW).fill_zero(                                                                               \
+        SHA2_MAIN_COL_INDEX_V(V, STRUCT, FIELD), SHA2_MAIN_COL_ARRAY_LEN_V(V, STRUCT, FIELD)       \
+    )
+#define SHA2_MAIN_SLICE_FROM_V(V, ROW, STRUCT, FIELD)                                              \
     (ROW).slice_from(SHA2_MAIN_COL_INDEX_V(V, STRUCT, FIELD))
 
 // Compute offset of nested struct field: offsetof(Sha2MainCols, block) + offsetof(Sha2MainBlockCols, FIELD)
-#define SHA2_MAIN_COL_INDEX_BLOCK_V(V, FIELD)                                                       \
-    (SHA2_MAIN_COL_INDEX_V(V, Sha2MainCols, block) +                                                 \
+#define SHA2_MAIN_COL_INDEX_BLOCK_V(V, FIELD)                                                      \
+    (SHA2_MAIN_COL_INDEX_V(V, Sha2MainCols, block) +                                               \
      SHA2_MAIN_COL_INDEX_V(V, Sha2MainBlockCols, FIELD))
 // Compute offset of nested struct field: offsetof(Sha2MainCols, instruction) + offsetof(Sha2MainInstructionCols, FIELD)
-#define SHA2_MAIN_COL_INDEX_INSTR(V, FIELD)                                                         \
+#define SHA2_MAIN_COL_INDEX_INSTR(V, FIELD)                                                        \
     (SHA2_MAIN_COL_INDEX_V(V, Sha2MainCols, instruction) +                                         \
      SHA2_MAIN_COL_INDEX_PLAIN(Sha2MainInstructionCols, FIELD))
 // Compute offset of nested struct field: offsetof(Sha2MainCols, mem) + offsetof(Sha2MainMemoryCols, FIELD)
-#define SHA2_MAIN_COL_INDEX_MEM_V(V, FIELD)                                                          \
-    (SHA2_MAIN_COL_INDEX_V(V, Sha2MainCols, mem) +                                                   \
+#define SHA2_MAIN_COL_INDEX_MEM_V(V, FIELD)                                                        \
+    (SHA2_MAIN_COL_INDEX_V(V, Sha2MainCols, mem) +                                                 \
      SHA2_MAIN_COL_INDEX_V(V, Sha2MainMemoryCols, FIELD))
 
-#define SHA2_MAIN_WRITE_BLOCK(V, ROW, FIELD, VALUE)                                                 \
+#define SHA2_MAIN_WRITE_BLOCK(V, ROW, FIELD, VALUE)                                                \
     (ROW).write(SHA2_MAIN_COL_INDEX_BLOCK_V(V, FIELD), VALUE)
-#define SHA2_MAIN_WRITE_ARRAY_BLOCK(V, ROW, FIELD, VALUES)                                          \
-    (ROW).write_array(                                                                              \
-        SHA2_MAIN_COL_INDEX_BLOCK_V(V, FIELD),                                                       \
-        SHA2_MAIN_COL_ARRAY_LEN_V(V, Sha2MainBlockCols, FIELD),                                     \
-        VALUES                                                                                      \
+#define SHA2_MAIN_WRITE_ARRAY_BLOCK(V, ROW, FIELD, VALUES)                                         \
+    (ROW).write_array(                                                                             \
+        SHA2_MAIN_COL_INDEX_BLOCK_V(V, FIELD),                                                     \
+        SHA2_MAIN_COL_ARRAY_LEN_V(V, Sha2MainBlockCols, FIELD),                                    \
+        VALUES                                                                                     \
     )
 
-#define SHA2_MAIN_WRITE_INSTR(V, ROW, FIELD, VALUE)                                                 \
+#define SHA2_MAIN_WRITE_INSTR(V, ROW, FIELD, VALUE)                                                \
     (ROW).write(SHA2_MAIN_COL_INDEX_INSTR(V, FIELD), VALUE)
-#define SHA2_MAIN_WRITE_ARRAY_INSTR(V, ROW, FIELD, VALUES)                                          \
-    (ROW).write_array(                                                                              \
-        SHA2_MAIN_COL_INDEX_INSTR(V, FIELD),                                                         \
+#define SHA2_MAIN_WRITE_ARRAY_INSTR(V, ROW, FIELD, VALUES)                                         \
+    (ROW).write_array(                                                                             \
+        SHA2_MAIN_COL_INDEX_INSTR(V, FIELD),                                                       \
         SHA2_MAIN_COL_ARRAY_LEN_PLAIN(Sha2MainInstructionCols, FIELD),                             \
-        VALUES                                                                                      \
+        VALUES                                                                                     \
     )
 
-#define SHA2_MAIN_SLICE_MEM(V, ROW, FIELD)                                                          \
-    (ROW).slice_from(SHA2_MAIN_COL_INDEX_MEM_V(V, FIELD))
+#define SHA2_MAIN_SLICE_MEM(V, ROW, FIELD) (ROW).slice_from(SHA2_MAIN_COL_INDEX_MEM_V(V, FIELD))
 
 } // namespace sha2

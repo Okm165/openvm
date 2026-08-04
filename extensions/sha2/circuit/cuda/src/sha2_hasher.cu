@@ -128,9 +128,8 @@ template <typename V> struct Sha2TraceHelper {
             base = SHA2_COL_INDEX(V, Sha2RoundCols, message_schedule.w[round_idx]);
             return local_inner[base + bit];
         } else {
-            base = SHA2_COL_INDEX(
-                V, Sha2RoundCols, message_schedule.w[round_idx - V::ROUNDS_PER_ROW]
-            );
+            base =
+                SHA2_COL_INDEX(V, Sha2RoundCols, message_schedule.w[round_idx - V::ROUNDS_PER_ROW]);
             return next_inner[base + bit];
         }
     }
@@ -289,8 +288,10 @@ template <typename V> struct Sha2TraceHelper {
         SHA2INNER_WRITE_DIGEST(V, inner_row, flags.global_block_idx, Fp(global_block_idx));
     }
 
-    __device__ __noinline__ void generate_carry_ae(RowSlice local_inner, RowSlice next_inner)
-        const {
+    __device__ __noinline__ void generate_carry_ae(
+        RowSlice local_inner,
+        RowSlice next_inner
+    ) const {
         // Process one round at a time instead of pre-loading all 2*ROUNDS_PER_ROW rows.
         // This reduces per-function stack from ~2KB to ~512B for SHA-256.
         const Fp pow16_inv = inv(Fp(1u << 16));
@@ -337,10 +338,8 @@ template <typename V> struct Sha2TraceHelper {
                     Fp scale(1u << bit);
                     e_i_limb += get_e_bit(local_inner, next_inner, i, limb * 16 + bit) * scale;
                     a_i_limb += get_a_bit(local_inner, next_inner, i, limb * 16 + bit) * scale;
-                    a_i4_limb +=
-                        get_a_bit(local_inner, next_inner, i + 4, limb * 16 + bit) * scale;
-                    e_i4_limb +=
-                        get_e_bit(local_inner, next_inner, i + 4, limb * 16 + bit) * scale;
+                    a_i4_limb += get_a_bit(local_inner, next_inner, i + 4, limb * 16 + bit) * scale;
+                    e_i4_limb += get_e_bit(local_inner, next_inner, i + 4, limb * 16 + bit) * scale;
                 }
 
                 Fp t1_sum =
@@ -363,8 +362,10 @@ template <typename V> struct Sha2TraceHelper {
         }
     }
 
-    __device__ __noinline__ void generate_intermed_4(RowSlice local_inner, RowSlice next_inner)
-        const {
+    __device__ __noinline__ void generate_intermed_4(
+        RowSlice local_inner,
+        RowSlice next_inner
+    ) const {
         // Process one round at a time instead of pre-loading all 2*ROUNDS_PER_ROW rows.
         // This reduces per-function stack from ~1.2KB to ~256B for SHA-256.
         for (uint32_t i = 0; i < V::ROUNDS_PER_ROW; i++) {
@@ -382,8 +383,8 @@ template <typename V> struct Sha2TraceHelper {
                 Fp w_i_limb = Fp::zero();
 #pragma unroll 1
                 for (uint32_t bit = 0; bit < 16; bit++) {
-                    w_i_limb += get_w_bit(local_inner, next_inner, i, limb * 16 + bit) *
-                                Fp(1u << bit);
+                    w_i_limb +=
+                        get_w_bit(local_inner, next_inner, i, limb * 16 + bit) * Fp(1u << bit);
                 }
                 Fp val = w_i_limb + compose_u16_limb(sig_bits, limb);
                 SHA2INNER_WRITE_ROUND(V, next_inner, schedule_helper.intermed_4[i][limb], val);
@@ -391,8 +392,10 @@ template <typename V> struct Sha2TraceHelper {
         }
     }
 
-    __device__ __noinline__ void generate_intermed_12(RowSlice local_inner, RowSlice next_inner)
-        const {
+    __device__ __noinline__ void generate_intermed_12(
+        RowSlice local_inner,
+        RowSlice next_inner
+    ) const {
         // Process one round at a time instead of pre-loading all 2*ROUNDS_PER_ROW rows.
         // This reduces per-function stack from ~1.2KB to ~256B for SHA-256.
         for (uint32_t i = 0; i < V::ROUNDS_PER_ROW; i++) {
@@ -412,17 +415,15 @@ template <typename V> struct Sha2TraceHelper {
                 // w7_limb: use pre-stored w_3 helper for i<3, else compute w[i-3] on-the-fly
                 Fp w7_limb;
                 if (i < 3) {
-                    w7_limb = local_inner[SHA2_COL_INDEX(
-                        V, Sha2RoundCols, schedule_helper.w_3[i][limb]
-                    )];
+                    w7_limb =
+                        local_inner[SHA2_COL_INDEX(V, Sha2RoundCols, schedule_helper.w_3[i][limb])];
                 } else {
                     // i-3 is in local_inner (i-3 < ROUNDS_PER_ROW since i<ROUNDS_PER_ROW)
                     w7_limb = Fp::zero();
 #pragma unroll 1
                     for (uint32_t bit = 0; bit < 16; bit++) {
-                        w7_limb +=
-                            get_w_bit(local_inner, next_inner, i - 3, limb * 16 + bit) *
-                            Fp(1u << bit);
+                        w7_limb += get_w_bit(local_inner, next_inner, i - 3, limb * 16 + bit) *
+                                   Fp(1u << bit);
                     }
                 }
 
@@ -434,9 +435,8 @@ template <typename V> struct Sha2TraceHelper {
                         get_w_bit(local_inner, next_inner, i + 4, limb * 16 + bit) * Fp(1u << bit);
                 }
 
-                Fp sum =
-                    compose_u16_limb(sig_bits, limb) + w7_limb - carry * Fp(1u << 16) - w_cur +
-                    prev_carry;
+                Fp sum = compose_u16_limb(sig_bits, limb) + w7_limb - carry * Fp(1u << 16) - w_cur +
+                         prev_carry;
                 Fp intermed = -sum;
                 SHA2INNER_WRITE_ROUND(
                     V, local_inner, schedule_helper.intermed_12[i][limb], intermed
@@ -526,8 +526,7 @@ template <typename V> struct Sha2TraceHelper {
 
 static constexpr size_t SHA2_SCRATCH_STATE = 8; // a,b,c,d,e,f,g,h
 
-template <typename V>
-struct Sha2ScratchLayout {
+template <typename V> struct Sha2ScratchLayout {
     // Per-block: for each row, store state[8] + w_buf[BLOCK_WORDS]
     static constexpr size_t WORDS_PER_ROW = SHA2_SCRATCH_STATE + V::BLOCK_WORDS;
     static constexpr size_t WORDS_PER_BLOCK = V::ROWS_PER_BLOCK * WORDS_PER_ROW;
@@ -537,11 +536,15 @@ struct Sha2ScratchLayout {
 template <typename V>
 __global__ void sha2_first_pass_phase1(
     typename V::Word *__restrict__ d_scratch,
-    uint8_t *records, size_t num_records, size_t *record_offsets,
-    uint32_t total_num_blocks, typename V::Word *prev_hashes
+    uint8_t *records,
+    size_t num_records,
+    size_t *record_offsets,
+    uint32_t total_num_blocks,
+    typename V::Word *prev_hashes
 ) {
     uint32_t block_idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (block_idx >= total_num_blocks || block_idx >= num_records) return;
+    if (block_idx >= total_num_blocks || block_idx >= num_records)
+        return;
 
     using SL = Sha2ScratchLayout<V>;
     typename V::Word *scratch = d_scratch + static_cast<size_t>(block_idx) * SL::WORDS_PER_BLOCK;
@@ -560,8 +563,14 @@ __global__ void sha2_first_pass_phase1(
     for (uint32_t row_in_block = 0; row_in_block < V::ROWS_PER_BLOCK; row_in_block++) {
         // Snapshot state and w_buf before processing this row
         typename V::Word *row_scratch = scratch + row_in_block * SL::WORDS_PER_ROW;
-        row_scratch[0] = a; row_scratch[1] = b; row_scratch[2] = c; row_scratch[3] = d;
-        row_scratch[4] = e; row_scratch[5] = f; row_scratch[6] = g; row_scratch[7] = h;
+        row_scratch[0] = a;
+        row_scratch[1] = b;
+        row_scratch[2] = c;
+        row_scratch[3] = d;
+        row_scratch[4] = e;
+        row_scratch[5] = f;
+        row_scratch[6] = g;
+        row_scratch[7] = h;
         for (uint32_t i = 0; i < V::BLOCK_WORDS; i++)
             row_scratch[SHA2_SCRATCH_STATE + i] = w_buf[i];
 
@@ -578,9 +587,17 @@ __global__ void sha2_first_pass_phase1(
                             w_buf[(t - 16) & (V::BLOCK_WORDS - 1)];
                     w_buf[t & (V::BLOCK_WORDS - 1)] = w_val;
                 }
-                typename V::Word t1 = h + sha2::big_sig1<V>(e) + sha2::ch<V>(e, f, g) + V::K(t) + w_val;
+                typename V::Word t1 =
+                    h + sha2::big_sig1<V>(e) + sha2::ch<V>(e, f, g) + V::K(t) + w_val;
                 typename V::Word t2 = sha2::big_sig0<V>(a) + sha2::maj<V>(a, b, c);
-                h = g; g = f; f = e; e = d + t1; d = c; c = b; b = a; a = t1 + t2;
+                h = g;
+                g = f;
+                f = e;
+                e = d + t1;
+                d = c;
+                c = b;
+                b = a;
+                a = t1 + t2;
             }
         }
     }
@@ -589,26 +606,32 @@ __global__ void sha2_first_pass_phase1(
 // Phase 2: write trace columns from scratch (1 thread per row, coalesced writes)
 template <typename V>
 __global__ void sha2_first_pass_phase2(
-    Fp *trace, size_t trace_height,
-    uint32_t total_num_blocks, size_t num_records,
+    Fp *trace,
+    size_t trace_height,
+    uint32_t total_num_blocks,
+    size_t num_records,
     typename V::Word *prev_hashes,
     typename V::Word const *__restrict__ d_scratch,
-    uint32_t *bitwise_lookup_ptr, uint32_t bitwise_num_bits
+    uint32_t *bitwise_lookup_ptr,
+    uint32_t bitwise_num_bits
 ) {
     size_t absolute_row = blockIdx.x * blockDim.x + threadIdx.x;
-    if (absolute_row >= trace_height) return;
+    if (absolute_row >= trace_height)
+        return;
 
     uint32_t global_block_idx = static_cast<uint32_t>(absolute_row / V::ROWS_PER_BLOCK);
     uint32_t row_in_block = static_cast<uint32_t>(absolute_row % V::ROWS_PER_BLOCK);
 
-    if (global_block_idx >= total_num_blocks || global_block_idx >= num_records) return;
+    if (global_block_idx >= total_num_blocks || global_block_idx >= num_records)
+        return;
 
     RowSlice row(trace + absolute_row, trace_height);
     row.fill_zero(0, Sha2Layout<V>::WIDTH);
 
     using SL = Sha2ScratchLayout<V>;
     const typename V::Word *row_scratch =
-        d_scratch + static_cast<size_t>(global_block_idx) * SL::WORDS_PER_BLOCK + row_in_block * SL::WORDS_PER_ROW;
+        d_scratch + static_cast<size_t>(global_block_idx) * SL::WORDS_PER_BLOCK +
+        row_in_block * SL::WORDS_PER_ROW;
 
     // Restore state and w_buf from scratch
     typename V::Word a = row_scratch[0], b = row_scratch[1], c = row_scratch[2], d = row_scratch[3];
@@ -655,9 +678,8 @@ __global__ void sha2_first_pass_phase2(
                         sum += word_to_u16_limb<V>(num, limb);
                     }
                     if (limb > 0) {
-                        size_t carry_base = SHA2_COL_INDEX(
-                            V, Sha2RoundCols, message_schedule.carry_or_buffer[j]
-                        );
+                        size_t carry_base =
+                            SHA2_COL_INDEX(V, Sha2RoundCols, message_schedule.carry_or_buffer[j]);
                         sum += inner_row[carry_base + limb * 2 - 2].asUInt32() +
                                (inner_row[carry_base + limb * 2 - 1].asUInt32() << 1);
                     }
@@ -666,15 +688,17 @@ __global__ void sha2_first_pass_phase2(
                         V, inner_row, message_schedule.carry_or_buffer[j][limb * 2], Fp(carry & 1)
                     );
                     SHA2INNER_WRITE_ROUND(
-                        V, inner_row, message_schedule.carry_or_buffer[j][limb * 2 + 1], Fp((carry >> 1) & 1)
+                        V,
+                        inner_row,
+                        message_schedule.carry_or_buffer[j][limb * 2 + 1],
+                        Fp((carry >> 1) & 1)
                     );
                 }
             }
 
             SHA2_WRITE_BITS(V, inner_row, Sha2RoundCols, message_schedule.w[j], w_val);
 
-            typename V::Word t1 =
-                h + sha2::big_sig1<V>(e) + sha2::ch<V>(e, f, g) + V::K(t) + w_val;
+            typename V::Word t1 = h + sha2::big_sig1<V>(e) + sha2::ch<V>(e, f, g) + V::K(t) + w_val;
             typename V::Word t2 = sha2::big_sig0<V>(a) + sha2::maj<V>(a, b, c);
 
             typename V::Word new_e = d + t1;
@@ -685,11 +709,10 @@ __global__ void sha2_first_pass_phase2(
 
 #pragma unroll
             for (int limb = 0; limb < static_cast<int>(V::WORD_U16S); limb++) {
-                uint32_t t1_limb = word_to_u16_limb<V>(h, limb) +
-                                   word_to_u16_limb<V>(sha2::big_sig1<V>(e), limb) +
-                                   word_to_u16_limb<V>(sha2::ch<V>(e, f, g), limb) +
-                                   word_to_u16_limb<V>(V::K(t), limb) +
-                                   word_to_u16_limb<V>(w_val, limb);
+                uint32_t t1_limb =
+                    word_to_u16_limb<V>(h, limb) + word_to_u16_limb<V>(sha2::big_sig1<V>(e), limb) +
+                    word_to_u16_limb<V>(sha2::ch<V>(e, f, g), limb) +
+                    word_to_u16_limb<V>(V::K(t), limb) + word_to_u16_limb<V>(w_val, limb);
                 uint32_t t2_limb = word_to_u16_limb<V>(sha2::big_sig0<V>(a), limb) +
                                    word_to_u16_limb<V>(sha2::maj<V>(a, b, c), limb);
 
@@ -731,14 +754,23 @@ __global__ void sha2_first_pass_phase2(
 #pragma unroll
                     for (int limb = 0; limb < static_cast<int>(V::WORD_U16S); limb++) {
                         SHA2INNER_WRITE_ROUND(
-                            V, inner_row, schedule_helper.w_3[j][limb],
+                            V,
+                            inner_row,
+                            schedule_helper.w_3[j][limb],
                             Fp(word_to_u16_limb<V>(w3, limb))
                         );
                     }
                 }
             }
 
-            h = g; g = f; f = e; e = new_e; d = c; c = b; b = a; a = new_a;
+            h = g;
+            g = f;
+            f = e;
+            e = new_e;
+            d = c;
+            c = b;
+            b = a;
+            a = new_a;
         }
 
     } else {
@@ -753,8 +785,7 @@ __global__ void sha2_first_pass_phase2(
             typename V::Word val = w_buf[t_val & (V::BLOCK_WORDS - 1)];
             for (uint32_t limb = 0; limb < V::WORD_U16S; limb++) {
                 SHA2INNER_WRITE_DIGEST(
-                    V, inner_row, schedule_helper.w_3[j][limb],
-                    Fp(word_to_u16_limb<V>(val, limb))
+                    V, inner_row, schedule_helper.w_3[j][limb], Fp(word_to_u16_limb<V>(val, limb))
                 );
             }
         }
@@ -763,16 +794,19 @@ __global__ void sha2_first_pass_phase2(
         for (int i = 0; i < static_cast<int>(V::HASH_WORDS); i++) {
             typename V::Word fh_val = prev_hash[i] + work_vars[i];
             for (uint32_t limb = 0; limb < V::WORD_U8S; limb++) {
-                SHA2INNER_WRITE_DIGEST(V, inner_row, final_hash[i][limb],
-                    Fp(word_to_u8_limb<V>(fh_val, limb)));
+                SHA2INNER_WRITE_DIGEST(
+                    V, inner_row, final_hash[i][limb], Fp(word_to_u8_limb<V>(fh_val, limb))
+                );
             }
             for (uint32_t limb = 0; limb < V::WORD_U16S; limb++) {
-                SHA2INNER_WRITE_DIGEST(V, inner_row, prev_hash[i][limb],
-                    Fp(word_to_u16_limb<V>(prev_hash[i], limb)));
+                SHA2INNER_WRITE_DIGEST(
+                    V, inner_row, prev_hash[i][limb], Fp(word_to_u16_limb<V>(prev_hash[i], limb))
+                );
             }
             for (uint32_t limb = 0; limb < V::WORD_U8S; limb += 2) {
                 bitwise_lookup.add_range(
-                    word_to_u8_limb<V>(fh_val, limb), word_to_u8_limb<V>(fh_val, limb + 1));
+                    word_to_u8_limb<V>(fh_val, limb), word_to_u8_limb<V>(fh_val, limb + 1)
+                );
             }
         }
 
@@ -788,14 +822,18 @@ __global__ void sha2_first_pass_phase2(
 // Phase 3: cross-row dependencies (1 thread per block) — same as original second loop
 template <typename V>
 __global__ void sha2_first_pass_phase3(
-    Fp *trace, size_t trace_height,
-    uint32_t total_num_blocks, size_t num_records
+    Fp *trace,
+    size_t trace_height,
+    uint32_t total_num_blocks,
+    size_t num_records
 ) {
     uint32_t global_block_idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (global_block_idx >= total_num_blocks || global_block_idx >= num_records) return;
+    if (global_block_idx >= total_num_blocks || global_block_idx >= num_records)
+        return;
 
     uint32_t trace_start_row = global_block_idx * V::ROWS_PER_BLOCK;
-    if (trace_start_row + V::ROWS_PER_BLOCK > trace_height) return;
+    if (trace_start_row + V::ROWS_PER_BLOCK > trace_height)
+        return;
 
     Sha2TraceHelper<V> helper;
 
@@ -814,17 +852,21 @@ __global__ void sha2_first_pass_phase3(
                     )];
                     if (row_in_block + 1 == V::ROWS_PER_BLOCK - 1) {
                         SHA2INNER_WRITE_DIGEST(
-                            V, next_inner, schedule_helper.intermed_8[j][limb], intermed_4_val);
+                            V, next_inner, schedule_helper.intermed_8[j][limb], intermed_4_val
+                        );
                     } else {
                         SHA2INNER_WRITE_ROUND(
-                            V, next_inner, schedule_helper.intermed_8[j][limb], intermed_4_val);
+                            V, next_inner, schedule_helper.intermed_8[j][limb], intermed_4_val
+                        );
                     }
 
                     if (row_in_block >= 2 && row_in_block < V::ROWS_PER_BLOCK - 3) {
                         Fp intermed_8_val = local_inner[SHA2_COL_INDEX(
-                            V, Sha2RoundCols, schedule_helper.intermed_8[j][limb])];
+                            V, Sha2RoundCols, schedule_helper.intermed_8[j][limb]
+                        )];
                         SHA2INNER_WRITE_ROUND(
-                            V, next_inner, schedule_helper.intermed_12[j][limb], intermed_8_val);
+                            V, next_inner, schedule_helper.intermed_12[j][limb], intermed_8_val
+                        );
                     }
                 }
             }
@@ -908,12 +950,7 @@ __global__ void sha2_fill_first_dummy_row(Fp *trace, size_t trace_height, size_t
 
     Sha2TraceHelper<V> helper;
     helper.generate_default_row(
-        inner_row,
-        prev_hash,
-        nullptr,
-        nullptr,
-        padding_global_block_idx,
-        trace_height
+        inner_row, prev_hash, nullptr, nullptr, padding_global_block_idx, trace_height
     );
 
     helper.generate_carry_ae(inner_row, inner_row);
@@ -970,8 +1007,7 @@ __global__ void sha2_fill_invalid_rows(
     );
 }
 
-template <typename V>
-__global__ void sha2_fill_wraparound(Fp *trace, size_t trace_height) {
+template <typename V> __global__ void sha2_fill_wraparound(Fp *trace, size_t trace_height) {
     if (trace_height < 2) {
         return;
     }
@@ -1030,8 +1066,10 @@ int launch_sha2_first_pass_tracegen(
     {
         auto [grid_size, block_size] = kernel_launch_params(total_num_blocks, 256);
         sha2_first_pass_phase1<V><<<grid_size, block_size, 0, stream>>>(
-            d_scratch, d_records, num_records, d_record_offsets, total_num_blocks, d_prev_hashes);
-        if (int r = CHECK_KERNEL()) return r;
+            d_scratch, d_records, num_records, d_record_offsets, total_num_blocks, d_prev_hashes
+        );
+        if (int r = CHECK_KERNEL())
+            return r;
     }
 
     // Phase 2: write trace with coalesced stores (1 thread per row)
@@ -1039,22 +1077,36 @@ int launch_sha2_first_pass_tracegen(
         size_t rows_used = static_cast<size_t>(total_num_blocks) * V::ROWS_PER_BLOCK;
         auto [grid_size, block_size] = kernel_launch_params(rows_used, 256);
         sha2_first_pass_phase2<V><<<grid_size, block_size, 0, stream>>>(
-            d_trace, trace_height, total_num_blocks, num_records,
-            d_prev_hashes, d_scratch, d_bitwise_lookup, bitwise_num_bits);
-        if (int r = CHECK_KERNEL()) return r;
+            d_trace,
+            trace_height,
+            total_num_blocks,
+            num_records,
+            d_prev_hashes,
+            d_scratch,
+            d_bitwise_lookup,
+            bitwise_num_bits
+        );
+        if (int r = CHECK_KERNEL())
+            return r;
     }
 
     // Phase 3: cross-row dependencies (same logic as original second loop)
     {
         auto [grid_size, block_size] = kernel_launch_params(total_num_blocks, 256);
         sha2_first_pass_phase3<V><<<grid_size, block_size, 0, stream>>>(
-            d_trace, trace_height, total_num_blocks, num_records);
+            d_trace, trace_height, total_num_blocks, num_records
+        );
         return CHECK_KERNEL();
     }
 }
 
 template <typename V>
-int launch_sha2_second_pass_dependencies(Fp *d_trace, size_t trace_height, size_t rows_used, cudaStream_t stream) {
+int launch_sha2_second_pass_dependencies(
+    Fp *d_trace,
+    size_t trace_height,
+    size_t rows_used,
+    cudaStream_t stream
+) {
     size_t total_blocks = rows_used / V::ROWS_PER_BLOCK;
     auto [grid_size, block_size] = kernel_launch_params(total_blocks, 256);
     sha2_second_pass_dependencies<V>
@@ -1134,9 +1186,18 @@ int launch_sha256_first_pass_tracegen(
     cudaStream_t stream
 ) {
     return launch_sha2_first_pass_tracegen<Sha256Variant>(
-        d_trace, trace_height, d_records, num_records, d_record_offsets,
-        total_num_blocks, d_prev_hashes, d_bitwise_lookup, bitwise_num_bits,
-        d_scratch, scratch_words, stream
+        d_trace,
+        trace_height,
+        d_records,
+        num_records,
+        d_record_offsets,
+        total_num_blocks,
+        d_prev_hashes,
+        d_bitwise_lookup,
+        bitwise_num_bits,
+        d_scratch,
+        scratch_words,
+        stream
     );
 }
 
@@ -1155,17 +1216,40 @@ int launch_sha512_first_pass_tracegen(
     cudaStream_t stream
 ) {
     return launch_sha2_first_pass_tracegen<Sha512Variant>(
-        d_trace, trace_height, d_records, num_records, d_record_offsets,
-        total_num_blocks, d_prev_hashes, d_bitwise_lookup, bitwise_num_bits,
-        d_scratch, scratch_words, stream
+        d_trace,
+        trace_height,
+        d_records,
+        num_records,
+        d_record_offsets,
+        total_num_blocks,
+        d_prev_hashes,
+        d_bitwise_lookup,
+        bitwise_num_bits,
+        d_scratch,
+        scratch_words,
+        stream
     );
 }
 
-int launch_sha256_second_pass_dependencies(Fp *d_trace, size_t trace_height, size_t rows_used, cudaStream_t stream) {
-    return launch_sha2_second_pass_dependencies<Sha256Variant>(d_trace, trace_height, rows_used, stream);
+int launch_sha256_second_pass_dependencies(
+    Fp *d_trace,
+    size_t trace_height,
+    size_t rows_used,
+    cudaStream_t stream
+) {
+    return launch_sha2_second_pass_dependencies<Sha256Variant>(
+        d_trace, trace_height, rows_used, stream
+    );
 }
-int launch_sha512_second_pass_dependencies(Fp *d_trace, size_t trace_height, size_t rows_used, cudaStream_t stream) {
-    return launch_sha2_second_pass_dependencies<Sha512Variant>(d_trace, trace_height, rows_used, stream);
+int launch_sha512_second_pass_dependencies(
+    Fp *d_trace,
+    size_t trace_height,
+    size_t rows_used,
+    cudaStream_t stream
+) {
+    return launch_sha2_second_pass_dependencies<Sha512Variant>(
+        d_trace, trace_height, rows_used, stream
+    );
 }
 int launch_sha256_fill_invalid_rows(
     Fp *d_trace,
