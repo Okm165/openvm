@@ -275,13 +275,13 @@ fn aggregate_to_leaf(
         .enumerate()
         .map(|(i, chunk)| {
             let _span = info_span!("worker_leaf_agg", idx = i).entered();
-            Ok(leaf_prover.agg_prove_no_def::<DefaultStarkEngine>(chunk, ChildVkKind::App)?)
+            leaf_prover.agg_prove_no_def::<DefaultStarkEngine>(chunk, ChildVkKind::App)
         })
         .collect()
 }
 
 #[cfg(feature = "cuda")]
-pub fn run_grind_kernel(req: &crate::types::GrindRequest) -> Result<Option<u32>> {
+pub(crate) fn run_grind_kernel(req: &crate::types::GrindRequest) -> Result<Option<u32>> {
     use openvm_cuda_backend::bn254_sponge::DeviceBn254SpongeState;
     use openvm_cuda_common::{
         common::get_device, copy::MemCopyH2D, d_buffer::DeviceBuffer, stream::GpuDeviceCtx,
