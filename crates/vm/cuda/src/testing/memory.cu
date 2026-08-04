@@ -41,31 +41,38 @@ extern "C" int _memory_testing_tracegen(
     switch (block_size) {
     case 1:
         assert(width == sizeof(DummyMemoryInteractionCols<uint8_t, 1>));
-        memory_testing_tracegen<1><<<grid, block, 0, stream>>>(d_trace, height, d_records, num_records);
+        memory_testing_tracegen<1>
+            <<<grid, block, 0, stream>>>(d_trace, height, d_records, num_records);
         break;
     case 2:
         assert(width == sizeof(DummyMemoryInteractionCols<uint8_t, 2>));
-        memory_testing_tracegen<2><<<grid, block, 0, stream>>>(d_trace, height, d_records, num_records);
+        memory_testing_tracegen<2>
+            <<<grid, block, 0, stream>>>(d_trace, height, d_records, num_records);
         break;
     case 4:
         assert(width == sizeof(DummyMemoryInteractionCols<uint8_t, 4>));
-        memory_testing_tracegen<4><<<grid, block, 0, stream>>>(d_trace, height, d_records, num_records);
+        memory_testing_tracegen<4>
+            <<<grid, block, 0, stream>>>(d_trace, height, d_records, num_records);
         break;
     case 8:
         assert(width == sizeof(DummyMemoryInteractionCols<uint8_t, 8>));
-        memory_testing_tracegen<8><<<grid, block, 0, stream>>>(d_trace, height, d_records, num_records);
+        memory_testing_tracegen<8>
+            <<<grid, block, 0, stream>>>(d_trace, height, d_records, num_records);
         break;
     case 16:
         assert(width == sizeof(DummyMemoryInteractionCols<uint8_t, 16>));
-        memory_testing_tracegen<16><<<grid, block, 0, stream>>>(d_trace, height, d_records, num_records);
+        memory_testing_tracegen<16>
+            <<<grid, block, 0, stream>>>(d_trace, height, d_records, num_records);
         break;
     case 32:
         assert(width == sizeof(DummyMemoryInteractionCols<uint8_t, 32>));
-        memory_testing_tracegen<32><<<grid, block, 0, stream>>>(d_trace, height, d_records, num_records);
+        memory_testing_tracegen<32>
+            <<<grid, block, 0, stream>>>(d_trace, height, d_records, num_records);
         break;
     case 64:
         assert(width == sizeof(DummyMemoryInteractionCols<uint8_t, 64>));
-        memory_testing_tracegen<64><<<grid, block, 0, stream>>>(d_trace, height, d_records, num_records);
+        memory_testing_tracegen<64>
+            <<<grid, block, 0, stream>>>(d_trace, height, d_records, num_records);
         break;
     default:
         assert(false && "Invalid block size");

@@ -51,15 +51,12 @@ __global__ void cukernel_persistent_boundary_tracegen(
                 init_values =
                     record.address_space == DEFERRAL_AS
                         ? FpArray<8>::from_raw_array(
-                            reinterpret_cast<uint32_t const *>(
-                                initial_mem[addr_space_idx]
-                            ) + record.ptr
-                        )
-                        : FpArray<8>::from_u8_array(
-                            initial_mem[addr_space_idx] + record.ptr
-                        );
+                              reinterpret_cast<uint32_t const *>(initial_mem[addr_space_idx]) +
+                              record.ptr
+                          )
+                        : FpArray<8>::from_u8_array(initial_mem[addr_space_idx] + record.ptr);
             } else {
-                #pragma unroll
+#pragma unroll
                 for (int i = 0; i < 8; ++i) {
                     init_values.v[i] = 0;
                 }

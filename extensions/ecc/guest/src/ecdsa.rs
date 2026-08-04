@@ -1,3 +1,5 @@
+#![allow(deprecated)] // elliptic_curve 0.x re-exports generic_array::ArrayLength; required by ecdsa API
+
 use alloc::vec::Vec;
 use core::ops::{Add, Mul};
 

@@ -1,3 +1,5 @@
+#![allow(deprecated)] // elliptic_curve re-exports generic_array 0.x; required by k256 API
+
 // re-export types that are visible in the k256 crate for API compatibility
 
 // Use these types instead of unpatched k256::ecdsa::{Signature, VerifyingKey}

@@ -78,7 +78,7 @@ pub mod halo2_params;
 pub mod keygen;
 pub mod prover;
 #[cfg(feature = "evm-verify")]
-mod solidity;
+pub mod solidity;
 pub mod types;
 pub mod util;
 
@@ -829,6 +829,16 @@ where
     /// Generates Solidity verifier artifacts for the cached Halo2 proving key.
     pub fn generate_halo2_verifier_solidity(&self) -> Result<types::EvmHalo2Verifier, SdkError> {
         solidity::generate_halo2_verifier_solidity(&self.halo2_pk(), &self.halo2_params_reader)
+    }
+
+    #[cfg(feature = "evm-verify")]
+    /// Generates Solidity verifier artifacts from a pre-existing Halo2 proving key,
+    /// bypassing the lazy keygen in [`Self::halo2_prover`].
+    pub fn generate_halo2_verifier_solidity_from_pk(
+        &self,
+        halo2_pk: &keygen::Halo2ProvingKey,
+    ) -> Result<types::EvmHalo2Verifier, SdkError> {
+        solidity::generate_halo2_verifier_solidity(halo2_pk, &self.halo2_params_reader)
     }
 
     #[cfg(feature = "evm-verify")]

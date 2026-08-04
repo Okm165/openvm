@@ -1,3 +1,5 @@
+#![allow(deprecated)] // elliptic_curve re-exports generic_array 0.x; required by k256 API
+
 use core::{
     iter::Sum,
     ops::{Mul, MulAssign},

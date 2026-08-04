@@ -59,8 +59,7 @@ __device__ __forceinline__ void keccakf_round_body(uint64_t *state, uint32_t rou
     uint64_t temp = rotl64(state[RHO_PI_CYCLE_IDX[0]], RHO_PI_CYCLE_ROT[23]);
 #pragma unroll 1
     for (int i = 0; i < 23; i++) {
-        state[RHO_PI_CYCLE_IDX[i]] =
-            rotl64(state[RHO_PI_CYCLE_IDX[i + 1]], RHO_PI_CYCLE_ROT[i]);
+        state[RHO_PI_CYCLE_IDX[i]] = rotl64(state[RHO_PI_CYCLE_IDX[i + 1]], RHO_PI_CYCLE_ROT[i]);
     }
     state[RHO_PI_CYCLE_IDX[23]] = temp;
 

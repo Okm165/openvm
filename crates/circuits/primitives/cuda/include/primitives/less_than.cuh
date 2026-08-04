@@ -1,7 +1,7 @@
 #pragma once
 
-#include "histogram.cuh"
 #include "fp_array.cuh"
+#include "histogram.cuh"
 
 inline constexpr size_t AUX_LEN = 2;
 

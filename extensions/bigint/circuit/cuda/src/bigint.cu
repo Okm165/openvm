@@ -44,15 +44,29 @@ template <typename T> using BranchLessThan256CoreCols = BranchLessThanCoreCols<T
 // Heap adapter instantiation for 256-bit operations
 // NUM_READS = 2, BLOCKS_PER_READ = INT256_NUM_BLOCKS (8), BLOCKS_PER_WRITE = INT256_NUM_BLOCKS (8)
 // READ_SIZE = CONST_BLOCK_SIZE (4 bytes), WRITE_SIZE = CONST_BLOCK_SIZE (4 bytes)
-using Rv32VecHeapAdapter256 = Rv32VecHeapAdapter<2, INT256_NUM_BLOCKS, INT256_NUM_BLOCKS, CONST_BLOCK_SIZE, CONST_BLOCK_SIZE>;
+using Rv32VecHeapAdapter256 =
+    Rv32VecHeapAdapter<2, INT256_NUM_BLOCKS, INT256_NUM_BLOCKS, CONST_BLOCK_SIZE, CONST_BLOCK_SIZE>;
 
 template <typename T> struct BaseAlu256Cols {
-    Rv32VecHeapAdapterCols<T, 2, INT256_NUM_BLOCKS, INT256_NUM_BLOCKS, CONST_BLOCK_SIZE, CONST_BLOCK_SIZE> adapter;
+    Rv32VecHeapAdapterCols<
+        T,
+        2,
+        INT256_NUM_BLOCKS,
+        INT256_NUM_BLOCKS,
+        CONST_BLOCK_SIZE,
+        CONST_BLOCK_SIZE>
+        adapter;
     BaseAlu256CoreCols<T> core;
 };
 
 struct BaseAlu256Record {
-    Rv32VecHeapAdapterRecord<2, INT256_NUM_BLOCKS, INT256_NUM_BLOCKS, CONST_BLOCK_SIZE, CONST_BLOCK_SIZE> adapter;
+    Rv32VecHeapAdapterRecord<
+        2,
+        INT256_NUM_BLOCKS,
+        INT256_NUM_BLOCKS,
+        CONST_BLOCK_SIZE,
+        CONST_BLOCK_SIZE>
+        adapter;
     BaseAlu256CoreRecord core;
 };
 
@@ -121,7 +135,8 @@ extern "C" int _alu256_tracegen(
 
 // Heap branch adapter instantiation for 256-bit operations
 // NUM_READS = 2, BLOCKS_PER_READ = INT256_NUM_BLOCKS (8), READ_SIZE = CONST_BLOCK_SIZE (4 bytes)
-using Rv32VecHeapBranchAdapter256 = Rv32VecHeapBranchAdapter<2, INT256_NUM_BLOCKS, CONST_BLOCK_SIZE>;
+using Rv32VecHeapBranchAdapter256 =
+    Rv32VecHeapBranchAdapter<2, INT256_NUM_BLOCKS, CONST_BLOCK_SIZE>;
 
 template <typename T> struct BranchEqual256Cols {
     Rv32VecHeapBranchAdapterCols<T, 2, INT256_NUM_BLOCKS, CONST_BLOCK_SIZE> adapter;
@@ -197,12 +212,25 @@ extern "C" int _branch_equal256_tracegen(
 }
 
 template <typename T> struct LessThan256Cols {
-    Rv32VecHeapAdapterCols<T, 2, INT256_NUM_BLOCKS, INT256_NUM_BLOCKS, CONST_BLOCK_SIZE, CONST_BLOCK_SIZE> adapter;
+    Rv32VecHeapAdapterCols<
+        T,
+        2,
+        INT256_NUM_BLOCKS,
+        INT256_NUM_BLOCKS,
+        CONST_BLOCK_SIZE,
+        CONST_BLOCK_SIZE>
+        adapter;
     LessThan256CoreCols<T> core;
 };
 
 struct LessThan256Record {
-    Rv32VecHeapAdapterRecord<2, INT256_NUM_BLOCKS, INT256_NUM_BLOCKS, CONST_BLOCK_SIZE, CONST_BLOCK_SIZE> adapter;
+    Rv32VecHeapAdapterRecord<
+        2,
+        INT256_NUM_BLOCKS,
+        INT256_NUM_BLOCKS,
+        CONST_BLOCK_SIZE,
+        CONST_BLOCK_SIZE>
+        adapter;
     LessThan256CoreRecord core;
 };
 
@@ -343,12 +371,25 @@ extern "C" int _branch_less_than256_tracegen(
 }
 
 template <typename T> struct Shift256Cols {
-    Rv32VecHeapAdapterCols<T, 2, INT256_NUM_BLOCKS, INT256_NUM_BLOCKS, CONST_BLOCK_SIZE, CONST_BLOCK_SIZE> adapter;
+    Rv32VecHeapAdapterCols<
+        T,
+        2,
+        INT256_NUM_BLOCKS,
+        INT256_NUM_BLOCKS,
+        CONST_BLOCK_SIZE,
+        CONST_BLOCK_SIZE>
+        adapter;
     Shift256CoreCols<T> core;
 };
 
 struct Shift256Record {
-    Rv32VecHeapAdapterRecord<2, INT256_NUM_BLOCKS, INT256_NUM_BLOCKS, CONST_BLOCK_SIZE, CONST_BLOCK_SIZE> adapter;
+    Rv32VecHeapAdapterRecord<
+        2,
+        INT256_NUM_BLOCKS,
+        INT256_NUM_BLOCKS,
+        CONST_BLOCK_SIZE,
+        CONST_BLOCK_SIZE>
+        adapter;
     Shift256CoreRecord core;
 };
 
@@ -419,12 +460,25 @@ extern "C" int _shift256_tracegen(
 }
 
 template <typename T> struct Multiplication256Cols {
-    Rv32VecHeapAdapterCols<T, 2, INT256_NUM_BLOCKS, INT256_NUM_BLOCKS, CONST_BLOCK_SIZE, CONST_BLOCK_SIZE> adapter;
+    Rv32VecHeapAdapterCols<
+        T,
+        2,
+        INT256_NUM_BLOCKS,
+        INT256_NUM_BLOCKS,
+        CONST_BLOCK_SIZE,
+        CONST_BLOCK_SIZE>
+        adapter;
     Multiplication256CoreCols<T> core;
 };
 
 struct Multiplication256Record {
-    Rv32VecHeapAdapterRecord<2, INT256_NUM_BLOCKS, INT256_NUM_BLOCKS, CONST_BLOCK_SIZE, CONST_BLOCK_SIZE> adapter;
+    Rv32VecHeapAdapterRecord<
+        2,
+        INT256_NUM_BLOCKS,
+        INT256_NUM_BLOCKS,
+        CONST_BLOCK_SIZE,
+        CONST_BLOCK_SIZE>
+        adapter;
     Multiplication256CoreRecord core;
 };
 

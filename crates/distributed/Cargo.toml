@@ -1,0 +1,55 @@
+[package]
+name = "openvm-distributed"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+description = "Distributed multi-GPU proving orchestrator and worker for OpenVM"
+
+[dependencies]
+openvm-sdk = { workspace = true }
+openvm-sdk-config = { workspace = true }
+openvm-circuit = { workspace = true }
+openvm-stark-backend = { workspace = true }
+openvm-stark-sdk = { workspace = true }
+openvm-transpiler = { workspace = true }
+openvm-verify-stark-host = { workspace = true }
+openvm-continuations = { workspace = true }
+openvm-cuda-common = { workspace = true, optional = true }
+openvm-cuda-backend = { workspace = true, optional = true }
+
+axum = { version = "0.8", features = ["json"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+bitcode = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+tracing = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+eyre = { workspace = true }
+sys-info = "0.9"
+
+[features]
+default = ["parallel", "jemalloc"]
+parallel = ["openvm-sdk/parallel"]
+jemalloc = ["openvm-sdk/jemalloc"]
+cuda = ["openvm-sdk/cuda", "dep:openvm-cuda-common", "dep:openvm-cuda-backend", "openvm-cuda-backend?/baby-bear-bn254-poseidon2"]
+evm = ["openvm-sdk/evm-verify", "openvm-sdk/evm-prove"]
+halo2-gpu = ["evm", "cuda", "openvm-sdk/halo2-gpu"]
+
+[[bin]]
+name = "openvm-worker"
+path = "src/bin/worker.rs"
+
+[[bin]]
+name = "openvm-orchestrator"
+path = "src/bin/orchestrator.rs"
+
+[[bin]]
+name = "openvm-halo2-prove"
+path = "src/bin/halo2_prove.rs"
+required-features = ["evm"]

@@ -18,8 +18,7 @@ struct Rv32VecHeapBranchAdapterCols {
     MemoryReadAuxCols<T> heap_read_aux[NUM_READS][BLOCKS_PER_READ];
 };
 
-template <size_t NUM_READS, size_t BLOCKS_PER_READ>
-struct Rv32VecHeapBranchAdapterRecord {
+template <size_t NUM_READS, size_t BLOCKS_PER_READ> struct Rv32VecHeapBranchAdapterRecord {
     uint32_t from_pc;
     uint32_t from_timestamp;
 

@@ -1,3 +1,5 @@
+#![allow(clippy::let_and_return)] // Needed: debug assertions reference the return value
+
 use core::array;
 #[cfg(test)]
 use std::{cell::RefCell, vec::Vec};

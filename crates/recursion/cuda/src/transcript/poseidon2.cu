@@ -92,14 +92,12 @@ extern "C" int _poseidon2_tracegen(
 
     switch (sbox_regs) {
     case 1:
-        cukernel_poseidon2_tracegen<16, Poseidon2ParamsS1><<<grid, block, 0, stream>>>(
-            d_trace, height, width, d_records, d_counts, num_records
-        );
+        cukernel_poseidon2_tracegen<16, Poseidon2ParamsS1>
+            <<<grid, block, 0, stream>>>(d_trace, height, width, d_records, d_counts, num_records);
         break;
     case 0:
-        cukernel_poseidon2_tracegen<16, Poseidon2ParamsS0><<<grid, block, 0, stream>>>(
-            d_trace, height, width, d_records, d_counts, num_records
-        );
+        cukernel_poseidon2_tracegen<16, Poseidon2ParamsS0>
+            <<<grid, block, 0, stream>>>(d_trace, height, width, d_records, d_counts, num_records);
         break;
     default:
         return cudaErrorInvalidConfiguration;
@@ -122,13 +120,7 @@ extern "C" int _poseidon2_deduplicate_records_get_temp_bytes(
 
     size_t sort_storage_bytes = 0;
     cub::DeviceMergeSort::SortPairs(
-        nullptr,
-        sort_storage_bytes,
-        d_records_fp16,
-        d_counts,
-        num_records,
-        Fp16CompareOp(),
-        stream
+        nullptr, sort_storage_bytes, d_records_fp16, d_counts, num_records, Fp16CompareOp(), stream
     );
 
     size_t reduce_storage_bytes = 0;

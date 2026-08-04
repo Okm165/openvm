@@ -74,11 +74,8 @@ __global__ void initial_opened_values_tracegen(
     }
 
     // rows_per_proof_psums has length NUM_PROOFS + 1, with psums[0] = 0.
-    const size_t proof_idx = partition_point_leq(
-        rows_per_proof_psums + 1,
-        NUM_PROOFS,
-        static_cast<size_t>(row_idx)
-    );
+    const size_t proof_idx =
+        partition_point_leq(rows_per_proof_psums + 1, NUM_PROOFS, static_cast<size_t>(row_idx));
 
     const size_t record_idx = row_idx - rows_per_proof_psums[proof_idx];
 
@@ -92,15 +89,14 @@ __global__ void initial_opened_values_tracegen(
     const size_t coset_span = (1 << k_whir);
 
     const size_t coset_idx = (record_idx / records_per_coset_idx) % coset_span;
-    const size_t query_idx = (record_idx / (records_per_coset_idx * coset_span)) % num_initial_queries;
+    const size_t query_idx =
+        (record_idx / (records_per_coset_idx * coset_span)) % num_initial_queries;
 
     const size_t local_chunk_idx = record_idx % records_per_coset_idx;
     const size_t absolute_chunk_idx = chunks_before_proof + local_chunk_idx;
 
     const size_t commit_idx = partition_point_leq(
-        stacking_chunks_psums + cp_start + 1,
-        cp_end - cp_start,
-        absolute_chunk_idx
+        stacking_chunks_psums + cp_start + 1, cp_end - cp_start, absolute_chunk_idx
     );
 
     const size_t commit_chunks_before = stacking_chunks_psums[cp_start + commit_idx];
@@ -111,9 +107,8 @@ __global__ void initial_opened_values_tracegen(
     const bool is_first_in_query = is_first_in_coset && coset_idx == 0;
     const bool is_first_in_proof = is_first_in_query && query_idx == 0;
 
-    const size_t num_chunks =
-        stacking_chunks_psums[cp_start + commit_idx + 1] -
-        stacking_chunks_psums[cp_start + commit_idx];
+    const size_t num_chunks = stacking_chunks_psums[cp_start + commit_idx + 1] -
+                              stacking_chunks_psums[cp_start + commit_idx];
     const bool is_same_commit = chunk_idx + 1 < num_chunks;
 
     size_t chunk_len;
@@ -139,10 +134,7 @@ __global__ void initial_opened_values_tracegen(
     for (int i = 0; i < chunk_len; i++) {
         COL_WRITE_VALUE(row, InitialOpenedValuesCols, flags[i], Fp::one());
     }
-    row.fill_zero(
-        offsetof(InitialOpenedValuesCols<uint8_t>, flags) + chunk_len,
-        CHUNK - chunk_len
-    );
+    row.fill_zero(offsetof(InitialOpenedValuesCols<uint8_t>, flags) + chunk_len, CHUNK - chunk_len);
 
     Fp twiddle = pow(omega_k, coset_idx);
     COL_WRITE_VALUE(row, InitialOpenedValuesCols, twiddle, twiddle);
@@ -150,23 +142,19 @@ __global__ void initial_opened_values_tracegen(
     // For round 0, query_idx indexes directly (no round offset needed)
     const size_t proof_query_idx = proof_idx * total_queries + query_idx;
 
-    COL_WRITE_ARRAY(row, InitialOpenedValuesCols, codeword_value_acc, codeword_value_accs[row_idx].elems);
+    COL_WRITE_ARRAY(
+        row, InitialOpenedValuesCols, codeword_value_acc, codeword_value_accs[row_idx].elems
+    );
     COL_WRITE_VALUE(row, InitialOpenedValuesCols, zi, zis_per_proof[proof_query_idx]);
     COL_WRITE_VALUE(row, InitialOpenedValuesCols, zi_root, zi_roots_per_proof[proof_query_idx]);
     COL_WRITE_ARRAY(row, InitialOpenedValuesCols, yi, yis_per_proof[proof_query_idx].elems);
-    COL_WRITE_VALUE(
-        row,
-        InitialOpenedValuesCols,
-        merkle_idx_bit_src,
-        raw_queries[proof_query_idx]
-    );
+    COL_WRITE_VALUE(row, InitialOpenedValuesCols, merkle_idx_bit_src, raw_queries[proof_query_idx]);
 
     FpExt mu = mus_per_proof[proof_idx];
     COL_WRITE_ARRAY(row, InitialOpenedValuesCols, mu, mu.elems);
 
     size_t width_before_proof = stacking_widths_psums[cp_start];
-    size_t exponent_base =
-        stacking_widths_psums[cp_start + commit_idx] - width_before_proof;
+    size_t exponent_base = stacking_widths_psums[cp_start + commit_idx] - width_before_proof;
 
     const size_t chunk_base = exponent_base + chunk_idx * CHUNK;
 
@@ -225,28 +213,38 @@ extern "C" int _initial_opened_values_tracegen(
     assert((height & (height - 1)) == 0);
     auto [grid, block] = kernel_launch_params(height, 512);
 
-    SWITCH_BLOCK(num_proofs, NUM_PROOFS, (initial_opened_values_tracegen<NUM_PROOFS><<<grid, block, 0, stream>>>(
-        trace_d,
-        num_valid_rows,
-        height,
-        codeword_value_accs_d,
-        poseidon_states_d,
-        k_whir,
-        num_initial_queries,
-        total_queries,
-        omega_k,
-        mu_per_proof,
-        zi_d,
-        zi_roots_d,
-        yi_d,
-        merkle_idx_bit_src_d,
-        rows_per_proof_psums,
-        commits_per_proof_psums,
-        stacking_chunks_psums_per_proof,
-        stacking_widths_psums_per_proof,
-        mu_pows
-    );),
-    1, 2, 3, 4, 5, 6, 7, 8
+    SWITCH_BLOCK(
+        num_proofs,
+        NUM_PROOFS,
+        (initial_opened_values_tracegen<NUM_PROOFS><<<grid, block, 0, stream>>>(
+             trace_d,
+             num_valid_rows,
+             height,
+             codeword_value_accs_d,
+             poseidon_states_d,
+             k_whir,
+             num_initial_queries,
+             total_queries,
+             omega_k,
+             mu_per_proof,
+             zi_d,
+             zi_roots_d,
+             yi_d,
+             merkle_idx_bit_src_d,
+             rows_per_proof_psums,
+             commits_per_proof_psums,
+             stacking_chunks_psums_per_proof,
+             stacking_widths_psums_per_proof,
+             mu_pows
+        );),
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
     )
     return CHECK_KERNEL();
 }

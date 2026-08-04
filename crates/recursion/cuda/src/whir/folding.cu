@@ -74,12 +74,7 @@ __global__ void whir_folding_tracegen_kernel(
     COL_WRITE_VALUE(row, WhirFoldingCols, proof_idx, Fp(proof_idx));
     COL_WRITE_VALUE(row, WhirFoldingCols, whir_round, Fp(record.whir_round));
     COL_WRITE_VALUE(row, WhirFoldingCols, query_idx, Fp(record.query_idx));
-    COL_WRITE_VALUE(
-        row,
-        WhirFoldingCols,
-        is_root,
-        record.coset_size == 1 ? Fp::one() : Fp::zero()
-    );
+    COL_WRITE_VALUE(row, WhirFoldingCols, is_root, record.coset_size == 1 ? Fp::one() : Fp::zero());
     COL_WRITE_VALUE(row, WhirFoldingCols, coset_shift, record.coset_shift);
     COL_WRITE_VALUE(row, WhirFoldingCols, coset_idx, Fp(record.coset_idx));
     COL_WRITE_VALUE(row, WhirFoldingCols, height, Fp(record.height));
@@ -109,13 +104,7 @@ extern "C" int _whir_folding_tracegen(
 
     auto [grid, block] = kernel_launch_params(height);
     whir_folding_tracegen_kernel<<<grid, block, 0, stream>>>(
-        trace,
-        num_valid_rows,
-        height,
-        records,
-        num_rounds,
-        total_queries,
-        k_whir
+        trace, num_valid_rows, height, records, num_rounds, total_queries, k_whir
     );
     return CHECK_KERNEL();
 }

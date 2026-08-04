@@ -304,11 +304,10 @@ __global__ void symbolic_expression_tracegen(
                 write_dag_commit_flags(
                     row,
                     encoder,
-                    local_idx == 0
-                        ? NODE_KIND_INTERACTION_MULT
-                        : (local_idx == interaction.message_len + 1
-                               ? NODE_KIND_INTERACTION_BUS_INDEX
-                               : NODE_KIND_INTERACTION_MSG_COMP)
+                    local_idx == 0 ? NODE_KIND_INTERACTION_MULT
+                                   : (local_idx == interaction.message_len + 1
+                                          ? NODE_KIND_INTERACTION_BUS_INDEX
+                                          : NODE_KIND_INTERACTION_MSG_COMP)
                 );
             }
             return;

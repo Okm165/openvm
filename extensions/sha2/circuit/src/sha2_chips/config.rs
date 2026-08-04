@@ -1,6 +1,7 @@
 use openvm_sha2_air::{Sha256Config, Sha384Config, Sha512Config};
 use sha2::{
-    compress256, compress512, digest::generic_array::GenericArray, Digest, Sha256, Sha384, Sha512,
+    block_api::{compress256, compress512},
+    Digest, Sha256, Sha384, Sha512,
 };
 
 use crate::{Sha2BlockHasherVmConfig, Sha2MainChipConfig};
@@ -42,9 +43,8 @@ impl Sha2Config for Sha256Config {
         //   Sha256, u64 for Sha512)
         let state_u32s: &mut [u32; 8] = unsafe { &mut *(state.as_mut_ptr() as *mut [u32; 8]) };
 
-        let input_array = GenericArray::from_slice(input);
-
-        compress256(state_u32s, &[*input_array]);
+        let block: [u8; 64] = input.try_into().unwrap();
+        compress256(state_u32s, &[block]);
     }
 
     // returns the digest as big-endian words
@@ -71,9 +71,8 @@ impl Sha2Config for Sha512Config {
             *w = u64::from_ne_bytes(chunk.try_into().unwrap());
         }
 
-        let input_array = GenericArray::from_slice(input);
-
-        compress512(&mut state_u64s, &[*input_array]);
+        let block: [u8; 128] = input.try_into().unwrap();
+        compress512(&mut state_u64s, &[block]);
 
         for (w, chunk) in state_u64s.iter().zip(state.chunks_exact_mut(8)) {
             chunk.copy_from_slice(&w.to_ne_bytes());

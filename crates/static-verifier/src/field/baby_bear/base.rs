@@ -1,3 +1,5 @@
+#![allow(clippy::let_and_return)] // Needed: debug assertions reference the return value
+
 use std::{cell::RefCell, collections::HashMap, sync::Arc};
 
 use halo2_base::{

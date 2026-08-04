@@ -24,13 +24,7 @@ struct FpEqual {
  * VPMM). To see how to get the minimum temporary storage amount in bytes, see
  * external function _get_prefix_scan_temp_bytes in scan.cu.
  */
-__host__ int prefix_scan(
-    Fp *d_arr,
-    size_t n,
-    void *d_temp,
-    size_t temp_n,
-    cudaStream_t stream
-);
+__host__ int prefix_scan(Fp *d_arr, size_t n, void *d_temp, size_t temp_n, cudaStream_t stream);
 
 /*
  * Takes a size-n Fp array and performs an in-place inclusive suffix scan.
@@ -39,13 +33,7 @@ __host__ int prefix_scan(
  *
  * Implemented by scanning over `thrust::reverse_iterator`.
  */
-__host__ int suffix_scan(
-    Fp *d_arr,
-    size_t n,
-    void *d_temp,
-    size_t temp_n,
-    cudaStream_t stream
-);
+__host__ int suffix_scan(Fp *d_arr, size_t n, void *d_temp, size_t temp_n, cudaStream_t stream);
 
 /*
  * Takes size-n `Fp` values and performs an in-place inclusive segmented prefix scan,

@@ -4,7 +4,7 @@ use openvm_circuit_primitives::{
     bitwise_op_lookup::SharedBitwiseOperationLookupChip, encoder::Encoder, utils::compose,
 };
 use openvm_stark_backend::p3_field::PrimeField32;
-use sha2::{compress256, compress512, digest::generic_array::GenericArray};
+use sha2::block_api::{compress256, compress512};
 
 use crate::{
     big_sig0, big_sig0_field, big_sig1, big_sig1_field, ch, ch_field, get_flag_pt_array,
@@ -47,18 +47,14 @@ impl<C: Sha2BlockHasherSubairConfig> Sha2BlockHasherFillerHelper<C> {
         let mut new_hash: [C::Word; 8] = prev_hash.try_into().unwrap();
         match C::VARIANT {
             Sha2Variant::Sha256 => {
-                let input_array = [*GenericArray::<u8, sha2::digest::consts::U64>::from_slice(
-                    &input,
-                )];
+                let block: [u8; 64] = input.try_into().unwrap();
                 let hash_ptr: &mut [u32; 8] = unsafe { std::mem::transmute(&mut new_hash) };
-                compress256(hash_ptr, &input_array);
+                compress256(hash_ptr, &[block]);
             }
             Sha2Variant::Sha512 | Sha2Variant::Sha384 => {
                 let hash_ptr: &mut [u64; 8] = unsafe { std::mem::transmute(&mut new_hash) };
-                let input_array = [*GenericArray::<u8, sha2::digest::consts::U128>::from_slice(
-                    &input,
-                )];
-                compress512(hash_ptr, &input_array);
+                let block: [u8; 128] = input.try_into().unwrap();
+                compress512(hash_ptr, &[block]);
             }
         }
         new_hash.to_vec()

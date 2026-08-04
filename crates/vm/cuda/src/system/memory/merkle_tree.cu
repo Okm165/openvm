@@ -201,8 +201,8 @@ __global__ void set_parent_id_adjacent_differences(
     } else {
         auto const ptr1 = current_layer_ptrs[gid - 1];
         auto const ptr2 = current_layer_ptrs[gid];
-        parent_ids[gid] = layer[ptr1].address_space_idx != layer[ptr2].address_space_idx
-            || (layer[ptr1].label >> h) != (layer[ptr2].label >> h);
+        parent_ids[gid] = layer[ptr1].address_space_idx != layer[ptr2].address_space_idx ||
+                          (layer[ptr1].label >> h) != (layer[ptr2].label >> h);
     }
 }
 
@@ -542,7 +542,12 @@ extern "C" int _calculate_zero_hash(digest_t *zero_hash, const size_t size, cuda
     return CHECK_KERNEL();
 }
 
-extern "C" int _get_prefix_scan_temp_bytes(uint32_t *d_arr, size_t n, size_t *h_temp_n, cudaStream_t stream) {
+extern "C" int _get_prefix_scan_temp_bytes(
+    uint32_t *d_arr,
+    size_t n,
+    size_t *h_temp_n,
+    cudaStream_t stream
+) {
     size_t temp_bytes = 0;
     cub::DeviceScan::InclusiveSum(nullptr, temp_bytes, d_arr, d_arr, n, stream);
     *h_temp_n = temp_bytes;
@@ -600,11 +605,13 @@ extern "C" int _update_merkle_tree(
 
     uint32_t merkle_trace_offset = unpadded_trace_height;
     for (uint32_t h = 1; h <= subtree_height; ++h) {
-        uint32_t* parent_ids = tmp_buf + 2 * num_children;
+        uint32_t *parent_ids = tmp_buf + 2 * num_children;
         // First, find for each child whether it has a different parent from the previous one
         {
             auto [grid, block] = kernel_launch_params(num_children);
-            set_parent_id_adjacent_differences<<<grid, block, 0, stream>>>(child_buf, parent_ids, layer, num_children, h);
+            set_parent_id_adjacent_differences<<<grid, block, 0, stream>>>(
+                child_buf, parent_ids, layer, num_children, h
+            );
             if (int err = CHECK_KERNEL(); err) {
                 return err;
             }
@@ -613,9 +620,7 @@ extern "C" int _update_merkle_tree(
         {
             // Now, perform the inclusive sum in-place
             cub::DeviceScan::InclusiveSum(
-                d_temp_storage, need_tmp_storage_bytes,
-                parent_ids, parent_ids, num_children,
-                stream
+                d_temp_storage, need_tmp_storage_bytes, parent_ids, parent_ids, num_children, stream
             );
             if (int err = CHECK_KERNEL(); err) {
                 return err;
@@ -625,12 +630,7 @@ extern "C" int _update_merkle_tree(
         {
             auto [grid, block] = kernel_launch_params(num_children);
             group_by_parent<<<grid, block, 0, stream>>>(
-                child_buf,
-                parent_ids,
-                tmp_buf,
-                layer,
-                num_children,
-                h
+                child_buf, parent_ids, tmp_buf, layer, num_children, h
             );
             if (int err = CHECK_KERNEL(); err) {
                 return err;

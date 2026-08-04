@@ -1,3 +1,5 @@
+#![allow(deprecated)] // elliptic_curve re-exports generic_array 0.x; required by p256 API
+
 // re-export types that are visible in the p256 crate for API compatibility
 
 // Use these types instead of unpatched p256::ecdsa::{Signature, VerifyingKey}
