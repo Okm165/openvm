@@ -46,8 +46,10 @@ pub fn run(
     let root_proof = {
         let root_prover = sdk.root_prover();
         let agg_prover = sdk.agg_prover();
+        #[allow(unused_mut)]
         let mut root_engine = root_prover.create_engine();
 
+        #[cfg(feature = "cuda")]
         root_engine.device_mut().set_cache_rs_code_matrix(true);
 
         root_prover.prove(proof, &root_engine, 8, |p| {
@@ -171,7 +173,7 @@ pub fn halo2_prove_and_verify(
 
     info!("Starting Halo2 proof generation...");
     let prove_start = Instant::now();
-    let evm_proof = prover.prove_for_evm(root_proof);
+    let evm_proof = prover.prove_for_evm(root_proof)?;
     info!("Halo2 proof generated in {:?}", prove_start.elapsed());
 
     info!("Verifying with EVM...");
