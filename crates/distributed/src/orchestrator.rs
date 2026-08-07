@@ -21,7 +21,7 @@ use tracing::{info, info_span, instrument};
 use crate::{
     assignment::assign_segments,
     client::WorkerClient,
-    types::{SegmentDescriptor, SegmentTask},
+    types::{ProveRequest, SegmentDescriptor},
 };
 
 pub struct DistributedProveResult {
@@ -57,25 +57,8 @@ impl DistributedProver {
         &self.sdk
     }
 
-    pub fn into_sdk(self) -> Sdk {
-        self.sdk
-    }
-
-    pub fn remote_workers(&self) -> Vec<WorkerClient> {
-        self.workers
-            .iter()
-            .filter(|w| !w.is_local())
-            .cloned()
-            .collect()
-    }
-
-    pub async fn shutdown_local_workers(&self) {
-        for worker in self.workers.iter().filter(|w| w.is_local()) {
-            info!("Shutting down local worker {}", worker.base_url());
-            if let Err(e) = worker.shutdown().await {
-                tracing::warn!("Worker {} shutdown failed: {}", worker.base_url(), e);
-            }
-        }
+    pub fn workers(&self) -> &[WorkerClient] {
+        &self.workers
     }
 
     #[instrument(name = "distributed_prove", skip_all)]
@@ -85,8 +68,6 @@ impl DistributedProver {
         if self.workers.is_empty() {
             bail!("No workers configured. Add at least one --workers URL.");
         }
-
-        let payload_bytes = Arc::new(self.build_setup_payload_bytes()?);
 
         info!("Phase 1: Metered execution (E2)");
         let e2_start = Instant::now();
@@ -106,23 +87,6 @@ impl DistributedProver {
             );
         }
 
-        let setup_start = Instant::now();
-        let mut setup_futures = Vec::with_capacity(self.workers.len());
-        for worker in &self.workers {
-            let w = worker.clone();
-            let bytes = Arc::clone(&payload_bytes);
-            setup_futures.push(tokio::spawn(
-                async move { w.setup_with_bytes(&bytes).await },
-            ));
-        }
-        for future in setup_futures {
-            future
-                .await
-                .map_err(|e| eyre::eyre!("setup task panicked: {}", e))??;
-        }
-        let setup_duration = setup_start.elapsed();
-        info!("Setup: {:?}", setup_duration);
-
         info!(
             "Phase 2: Proving {} segments across {} workers",
             num_segments,
@@ -134,19 +98,6 @@ impl DistributedProver {
         let prove_duration = prove_start.elapsed();
         info!("Proving: {:?}", prove_duration);
 
-        let heavy_aggregation = segment_proofs.len() > 1;
-        if heavy_aggregation {
-            self.shutdown_local_workers().await;
-        }
-        for worker in self.workers.iter().filter(|w| !w.is_local()) {
-            if let Err(e) = worker.release_gpu().await {
-                tracing::warn!("Worker {} GPU release failed: {}", worker.base_url(), e);
-            }
-        }
-        crate::release_cuda_memory();
-        if heavy_aggregation {
-            tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
-        }
         info!(
             "Phase 3: Aggregation ({} proofs, leaf={})",
             segment_proofs.len(),
@@ -166,9 +117,8 @@ impl DistributedProver {
         let agg_duration = agg_start.elapsed();
         let total_duration = total_start.elapsed();
         info!(
-            "=== Timing: E2={:.1}s setup={:.1}s prove={:.1}s agg={:.1}s total={:.1}s ===",
+            "=== Timing: E2={:.1}s prove={:.1}s agg={:.1}s total={:.1}s ===",
             e2_duration.as_secs_f64(),
-            setup_duration.as_secs_f64(),
             prove_duration.as_secs_f64(),
             agg_duration.as_secs_f64(),
             total_duration.as_secs_f64(),
@@ -234,20 +184,19 @@ impl DistributedProver {
         }
     }
 
-    fn build_setup_payload_bytes(&self) -> Result<Vec<u8>> {
+    /// Serialize PK, ELF, and stdin once; reuse across all workers.
+    fn serialize_context(&self) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>)> {
         let app_pk = self.sdk.app_pk();
-        let payload = crate::types::SetupPayload {
-            app_pk_bytes: bitcode::serialize(app_pk).wrap_err("serialize app_pk")?,
-            exe_bytes: bitcode::serialize(&*self.exe).wrap_err("serialize exe")?,
-            stdin_bytes: bitcode::serialize(&self.stdin).wrap_err("serialize stdin")?,
-        };
+        let pk_bytes = bitcode::serialize(app_pk).wrap_err("serialize app_pk")?;
+        let exe_bytes = bitcode::serialize(&*self.exe).wrap_err("serialize exe")?;
+        let stdin_bytes = bitcode::serialize(&self.stdin).wrap_err("serialize stdin")?;
         info!(
-            "Payload: pk={} exe={} stdin={} bytes",
-            payload.app_pk_bytes.len(),
-            payload.exe_bytes.len(),
-            payload.stdin_bytes.len()
+            "Context: pk={} exe={} stdin={} bytes",
+            pk_bytes.len(),
+            exe_bytes.len(),
+            stdin_bytes.len()
         );
-        bitcode::serialize(&payload).wrap_err("serialize setup payload")
+        Ok((pk_bytes, exe_bytes, stdin_bytes))
     }
 
     fn aggregate_from_leaf_proofs(
@@ -352,6 +301,8 @@ impl DistributedProver {
             info!("Leaf aggregation disabled: some workers have only 1 segment");
         }
 
+        let (pk_bytes, exe_bytes, stdin_bytes) = self.serialize_context()?;
+
         let mut all_proofs: Vec<Option<Vec<Proof<SC>>>> = vec![None; assignments.len()];
         let mut futures = Vec::with_capacity(assignments.len());
 
@@ -362,27 +313,34 @@ impl DistributedProver {
                 .collect();
 
             let is_last_assignment = assign_idx == assignments.len() - 1;
-            let task = SegmentTask {
+            let request = ProveRequest {
+                app_pk_bytes: pk_bytes.clone(),
+                exe_bytes: exe_bytes.clone(),
+                stdin_bytes: stdin_bytes.clone(),
                 segments: segment_descs,
                 compute_user_public_values: is_last_assignment,
                 aggregate_to_leaf,
                 num_children_leaf,
             };
 
+            let request_bytes = bitcode::serialize(&request).wrap_err("serialize prove request")?;
+
             let client = self.workers[assign_idx].clone();
+            let num_segs = request.segments.len();
 
             info!(
-                "→ {} segs [{}-{}] ({} insns) to {}",
-                task.segments.len(),
+                "→ {} segs [{}-{}] ({} insns, {:.1} MB) to {}",
+                num_segs,
                 assignment.start,
                 assignment.end - 1,
                 assignment.total_insns,
+                request_bytes.len() as f64 / 1_048_576.0,
                 client.base_url(),
             );
 
             futures.push(tokio::spawn(async move {
                 let start = Instant::now();
-                let result = client.prove_segments(&task).await;
+                let result = client.prove(&request_bytes, num_segs).await;
                 let elapsed = start.elapsed();
                 (assign_idx, result, elapsed)
             }));

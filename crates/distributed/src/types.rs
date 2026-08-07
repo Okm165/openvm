@@ -1,39 +1,16 @@
 use serde::{Deserialize, Serialize};
 
+/// Self-contained proving request. Carries all context the worker needs.
+/// The orchestrator builds one per worker, sends in parallel.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SetupPayload {
+pub struct ProveRequest {
     pub app_pk_bytes: Vec<u8>,
     pub exe_bytes: Vec<u8>,
     pub stdin_bytes: Vec<u8>,
-}
-
-impl SetupPayload {
-    /// FNV-1a fingerprint for cache invalidation.
-    pub fn content_fingerprint(raw_bytes: &[u8]) -> u64 {
-        const FNV_OFFSET: u64 = 0xcbf29ce484222325;
-        const FNV_PRIME: u64 = 0x100000001b3;
-        let mut hash = FNV_OFFSET;
-        for &byte in raw_bytes {
-            hash ^= byte as u64;
-            hash = hash.wrapping_mul(FNV_PRIME);
-        }
-        hash
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SegmentTask {
     pub segments: Vec<SegmentDescriptor>,
-    #[serde(default)]
     pub compute_user_public_values: bool,
-    #[serde(default)]
     pub aggregate_to_leaf: bool,
-    #[serde(default = "default_num_children_leaf")]
     pub num_children_leaf: usize,
-}
-
-fn default_num_children_leaf() -> usize {
-    4
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -71,21 +48,6 @@ pub struct HealthResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SetupResponse {
-    pub message: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SetupCheckRequest {
-    pub fingerprint: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SetupCheckResponse {
-    pub needs_payload: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ErrorResponse {
     pub error: String,
     pub retryable: bool,
@@ -109,4 +71,45 @@ fn default_witness_step() -> u32 {
 pub struct GrindResponse {
     pub witness: Option<u32>,
     pub grind_time_ms: u64,
+}
+
+// ─── Root proving ────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RootProveTask {
+    pub proof_bytes: Vec<u8>,
+    pub metadata_bytes: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RootProveResponse {
+    pub root_proof_bytes: Vec<u8>,
+    pub proving_time_ms: u64,
+}
+
+// ─── Halo2 proving ───────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Halo2PreloadRequest {
+    pub halo2_pk_path: String,
+    pub kzg_params_dir: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Halo2PreloadResponse {
+    pub ready: bool,
+    pub load_time_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Halo2ProveTask {
+    pub root_proof_bytes: Vec<u8>,
+    pub halo2_pk_path: String,
+    pub kzg_params_dir: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Halo2ProveResponse {
+    pub gas_cost: u64,
+    pub proving_time_ms: u64,
 }

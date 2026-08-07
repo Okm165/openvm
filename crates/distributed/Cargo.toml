@@ -23,7 +23,7 @@ openvm-cuda-backend = { workspace = true, optional = true }
 
 axum = { version = "0.8", features = ["json"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "sync", "macros"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 bitcode = { workspace = true }
@@ -37,7 +37,7 @@ sys-info = "0.9"
 default = ["parallel", "jemalloc"]
 parallel = ["openvm-sdk/parallel"]
 jemalloc = ["openvm-sdk/jemalloc"]
-cuda = ["openvm-sdk/cuda", "dep:openvm-cuda-common", "dep:openvm-cuda-backend", "openvm-cuda-backend?/baby-bear-bn254-poseidon2"]
+cuda = ["openvm-sdk/cuda", "openvm-sdk/root-prover", "dep:openvm-cuda-common", "dep:openvm-cuda-backend", "openvm-cuda-backend?/baby-bear-bn254-poseidon2"]
 evm = ["openvm-sdk/evm-verify", "openvm-sdk/evm-prove"]
 halo2-gpu = ["evm", "cuda", "openvm-sdk/halo2-gpu"]
 

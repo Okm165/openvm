@@ -69,37 +69,11 @@ template <typename V> struct Sha2TraceHelper {
         return SHA2_COL_INDEX(V, Sha2RoundCols, work_vars.carry_e[row_idx]);
     }
 
-    __device__ __forceinline__ void read_w(RowSlice inner, uint32_t j, Fp *w_limbs) const {
-        size_t base = SHA2_COL_INDEX(V, Sha2RoundCols, message_schedule.w[j]);
-        for (int limb = 0; limb < V::WORD_U16S; limb++) {
-            w_limbs[limb] = Fp::zero();
-            for (int bit = 0; bit < 16; bit++) {
-                w_limbs[limb] += inner[base + bit] * Fp(1 << bit);
-            }
-            base += 16;
-        }
-    }
-
     __device__ __forceinline__ Fp read_carry_fp(RowSlice inner, uint32_t i, uint32_t limb) const {
         size_t base = SHA2_COL_INDEX(V, Sha2RoundCols, message_schedule.carry_or_buffer[i]);
         Fp low = inner[base + limb * 2];
         Fp high = inner[base + limb * 2 + 1];
         return low + high + high; // low + 2 * high
-    }
-
-    __device__ __forceinline__ void read_word_bits(
-        RowSlice inner,
-        size_t base,
-        Fp *dst_bits
-    ) const {
-#pragma unroll
-        for (uint32_t bit = 0; bit < V::WORD_BITS; bit++) {
-            dst_bits[bit] = inner[base + bit];
-        }
-    }
-
-    __device__ __forceinline__ void read_w_bits(RowSlice inner, uint32_t j, Fp *dst_bits) const {
-        read_word_bits(inner, SHA2_COL_INDEX(V, Sha2RoundCols, message_schedule.w[j]), dst_bits);
     }
 
     // Helpers to get bits from either local or next inner row without pre-loading arrays
@@ -325,8 +299,6 @@ template <typename V> struct Sha2TraceHelper {
                 );
             }
 
-            Fp prev_carry_a = Fp::zero();
-            Fp prev_carry_e = Fp::zero();
             for (uint32_t limb = 0; limb < V::WORD_U16S; limb++) {
                 // Compute e[i], a[i], a[i+4], e[i+4] limbs on-the-fly
                 Fp e_i_limb = Fp::zero();
@@ -355,9 +327,6 @@ template <typename V> struct Sha2TraceHelper {
 
                 SHA2INNER_WRITE_ROUND(V, next_inner, work_vars.carry_e[i][limb], Fp(carry_e));
                 SHA2INNER_WRITE_ROUND(V, next_inner, work_vars.carry_a[i][limb], Fp(carry_a));
-
-                prev_carry_e = carry_e;
-                prev_carry_a = carry_a;
             }
         }
     }
@@ -472,13 +441,13 @@ template <typename V> struct Sha2TraceHelper {
                         V,
                         inner_row,
                         work_vars.carry_a[i][limb],
-                        carry_a[(i * V::WORD_U16S + limb) * trace_height]
+                        carry_a[trace_col_offset(i * V::WORD_U16S + limb, trace_height)]
                     );
                     SHA2INNER_WRITE_ROUND(
                         V,
                         inner_row,
                         work_vars.carry_e[i][limb],
-                        carry_e[(i * V::WORD_U16S + limb) * trace_height]
+                        carry_e[trace_col_offset(i * V::WORD_U16S + limb, trace_height)]
                     );
                 }
             }
@@ -698,8 +667,13 @@ __global__ void sha2_first_pass_phase2(
 
             SHA2_WRITE_BITS(V, inner_row, Sha2RoundCols, message_schedule.w[j], w_val);
 
-            typename V::Word t1 = h + sha2::big_sig1<V>(e) + sha2::ch<V>(e, f, g) + V::K(t) + w_val;
-            typename V::Word t2 = sha2::big_sig0<V>(a) + sha2::maj<V>(a, b, c);
+            typename V::Word sig1_e = sha2::big_sig1<V>(e);
+            typename V::Word ch_efg = sha2::ch<V>(e, f, g);
+            typename V::Word sig0_a = sha2::big_sig0<V>(a);
+            typename V::Word maj_abc = sha2::maj<V>(a, b, c);
+
+            typename V::Word t1 = h + sig1_e + ch_efg + V::K(t) + w_val;
+            typename V::Word t2 = sig0_a + maj_abc;
 
             typename V::Word new_e = d + t1;
             typename V::Word new_a = t1 + t2;
@@ -710,11 +684,11 @@ __global__ void sha2_first_pass_phase2(
 #pragma unroll
             for (int limb = 0; limb < static_cast<int>(V::WORD_U16S); limb++) {
                 uint32_t t1_limb =
-                    word_to_u16_limb<V>(h, limb) + word_to_u16_limb<V>(sha2::big_sig1<V>(e), limb) +
-                    word_to_u16_limb<V>(sha2::ch<V>(e, f, g), limb) +
-                    word_to_u16_limb<V>(V::K(t), limb) + word_to_u16_limb<V>(w_val, limb);
-                uint32_t t2_limb = word_to_u16_limb<V>(sha2::big_sig0<V>(a), limb) +
-                                   word_to_u16_limb<V>(sha2::maj<V>(a, b, c), limb);
+                    word_to_u16_limb<V>(h, limb) + word_to_u16_limb<V>(sig1_e, limb) +
+                    word_to_u16_limb<V>(ch_efg, limb) + word_to_u16_limb<V>(V::K(t), limb) +
+                    word_to_u16_limb<V>(w_val, limb);
+                uint32_t t2_limb =
+                    word_to_u16_limb<V>(sig0_a, limb) + word_to_u16_limb<V>(maj_abc, limb);
 
                 uint32_t prev_carry_e =
                     (limb > 0) ? inner_row[SHA2_COL_INDEX(

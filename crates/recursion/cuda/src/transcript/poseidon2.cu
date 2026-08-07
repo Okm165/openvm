@@ -66,14 +66,16 @@ __global__ void cukernel_poseidon2_tracegen(
             RowSlice state(d_records + idx * WIDTH, 1);
             poseidon2::generate_trace_row_for_perm(row, state);
             auto count = d_counts[idx];
-            d_trace[idx + Poseidon2Row::get_total_size() * trace_height] = count.perm;
-            d_trace[idx + (Poseidon2Row::get_total_size() + 1) * trace_height] = count.compress;
+            d_trace[idx + trace_col_offset(Poseidon2Row::get_total_size(), trace_height)] =
+                count.perm;
+            d_trace[idx + trace_col_offset(Poseidon2Row::get_total_size() + 1, trace_height)] =
+                count.compress;
         } else {
             Fp dummy[Poseidon2Row::get_total_size()] = {0};
             RowSlice dummy_row(dummy, 1);
             poseidon2::generate_trace_row_for_perm(row, dummy_row);
-            d_trace[idx + Poseidon2Row::get_total_size() * trace_height] = 0;
-            d_trace[idx + (Poseidon2Row::get_total_size() + 1) * trace_height] = 0;
+            d_trace[idx + trace_col_offset(Poseidon2Row::get_total_size(), trace_height)] = 0;
+            d_trace[idx + trace_col_offset(Poseidon2Row::get_total_size() + 1, trace_height)] = 0;
         }
     }
 }

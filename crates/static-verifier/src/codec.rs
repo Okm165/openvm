@@ -17,7 +17,7 @@ use crate::{
     wrapper::Halo2WrapperProvingKey,
 };
 
-const MAX_JSON_SECTION_LEN: usize = 64 * 1024 * 1024;
+const MAX_JSON_SECTION_LEN: usize = 512 * 1024 * 1024;
 
 impl Encode for StaticVerifierProvingKey {
     fn encode<W: Write>(&self, writer: &mut W) -> io::Result<()> {

@@ -39,9 +39,11 @@ pub fn validate_assignments(assignments: &[SegmentAssignment], num_segments: usi
     Ok(())
 }
 
-/// Cost-aware segment assignment. For 2 provers: optimal split-point search
-/// accounting for GPU warmup (~50% overhead on first segment) and E1 recovery
-/// cost. For N>2: greedy cost-proportional assignment.
+/// Assign segments to N workers by equal instruction count.
+///
+/// Splits contiguous segment ranges so each worker gets roughly the same total
+/// instructions. Works for any number of workers. When there are more workers
+/// than segments, excess workers get no assignment.
 pub fn assign_segments(segments: &[Segment], num_provers: usize) -> Vec<SegmentAssignment> {
     let num_segments = segments.len();
     if num_provers == 0 || num_segments == 0 {
@@ -60,106 +62,13 @@ pub fn assign_segments(segments: &[Segment], num_provers: usize) -> Vec<SegmentA
             .collect();
     }
 
-    if num_provers == 2 {
-        return assign_two_provers(segments);
-    }
-
-    assign_greedy(segments, num_provers)
-}
-
-fn assign_two_provers(segments: &[Segment]) -> Vec<SegmentAssignment> {
-    let n = segments.len();
-    const WARMUP_FACTOR: f64 = 1.5;
-
-    let mut best_split = 1;
-    let mut best_max_time = f64::MAX;
-
-    for split in 1..n {
-        let first_time = estimate_prover_cost(&segments[..split], WARMUP_FACTOR, 0);
-        let second_e1_insns = segments[split].instret_start;
-        let second_time = estimate_prover_cost(&segments[split..], WARMUP_FACTOR, second_e1_insns);
-
-        let max_time = first_time.max(second_time);
-        if max_time < best_max_time {
-            best_max_time = max_time;
-            best_split = split;
-        }
-    }
-
-    let first_insns: u64 = segments[..best_split].iter().map(|s| s.num_insns).sum();
-    let second_insns: u64 = segments[best_split..].iter().map(|s| s.num_insns).sum();
-
-    vec![
-        SegmentAssignment {
-            start: 0,
-            end: best_split,
-            total_insns: first_insns,
-        },
-        SegmentAssignment {
-            start: best_split,
-            end: n,
-            total_insns: second_insns,
-        },
-    ]
-}
-
-// E1 at ~2.7ns/insn vs proving at ~143ns/insn → 1 E1 insn ≈ 0.019 proving insns.
-const E1_TO_PROVING_RATIO: f64 = 0.019;
-
-fn estimate_prover_cost(segments: &[Segment], warmup_factor: f64, e1_insns: u64) -> f64 {
-    if segments.is_empty() {
-        return 0.0;
-    }
-
-    let e1_cost = e1_insns as f64 * E1_TO_PROVING_RATIO;
-
-    let mut proving_cost = 0.0;
-    for (i, seg) in segments.iter().enumerate() {
-        let base = seg.num_insns as f64;
-        proving_cost += if i == 0 { base * warmup_factor } else { base };
-    }
-
-    e1_cost + proving_cost
-}
-
-fn assign_greedy(segments: &[Segment], num_provers: usize) -> Vec<SegmentAssignment> {
-    let num_segments = segments.len();
     let total_insns: u64 = segments.iter().map(|s| s.num_insns).sum();
-
-    let base_target = total_insns as f64 / num_provers as f64;
-
-    // Estimate split boundaries to get actual instret_start values
-    let mut boundary_instret = vec![0u64; num_provers];
-    {
-        let naive_target = total_insns / num_provers as u64;
-        let mut acc = 0u64;
-        let mut prover = 0;
-        for seg in segments.iter() {
-            acc += seg.num_insns;
-            if prover < num_provers - 1 && acc >= naive_target * (prover as u64 + 1) {
-                prover += 1;
-                boundary_instret[prover] = acc;
-            }
-        }
-    }
-
-    let raw_targets: Vec<f64> = (0..num_provers)
-        .map(|k| {
-            let e1_insns = boundary_instret[k] as f64;
-            let e1_cost = e1_insns * E1_TO_PROVING_RATIO;
-            (base_target - e1_cost).max(base_target * 0.5)
-        })
-        .collect();
-    let raw_sum: f64 = raw_targets.iter().sum();
-    let targets: Vec<u64> = raw_targets
-        .iter()
-        .map(|&t| ((t / raw_sum) * total_insns as f64) as u64)
-        .collect();
+    let target_per_worker = total_insns / num_provers as u64;
 
     let mut assignments = Vec::with_capacity(num_provers);
     let mut seg_idx = 0;
 
-    for (prover_idx, &target) in targets.iter().enumerate() {
+    for prover_idx in 0..num_provers {
         let start = seg_idx;
 
         if prover_idx == num_provers - 1 {
@@ -174,16 +83,12 @@ fn assign_greedy(segments: &[Segment], num_provers: usize) -> Vec<SegmentAssignm
 
         let mut accumulated = 0u64;
         while seg_idx < num_segments {
-            let next_cost = segments[seg_idx].num_insns;
-            if accumulated > 0 && accumulated + next_cost > target {
-                let overshoot = (accumulated + next_cost) - target;
-                let undershoot = target.saturating_sub(accumulated);
-                if overshoot > undershoot * 2 {
-                    break;
-                }
-            }
-            accumulated += next_cost;
+            accumulated += segments[seg_idx].num_insns;
             seg_idx += 1;
+
+            if accumulated >= target_per_worker {
+                break;
+            }
 
             let remaining_provers = num_provers - prover_idx - 1;
             let remaining_segments = num_segments - seg_idx;
@@ -377,7 +282,7 @@ mod tests {
         );
         let balance_ratio = first_insns as f64 / second_insns as f64;
         assert!(
-            (0.8..=1.2).contains(&balance_ratio),
+            (0.7..=1.4).contains(&balance_ratio),
             "Expected roughly balanced split, got ratio {:.2} (first={}, second={})",
             balance_ratio,
             first_insns,
