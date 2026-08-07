@@ -16,7 +16,7 @@ use openvm_sdk_config::{SdkVmBuilder, SdkVmConfig};
 use openvm_stark_backend::{codec::Encode, proof::Proof, StarkEngine};
 use tracing::{info, info_span, instrument};
 
-use crate::types::{ProveSegmentsResponse, SegmentDescriptor, SegmentTask, SetupPayload};
+use crate::types::{ProveRequest, ProveSegmentsResponse, SegmentDescriptor};
 
 fn prove_segment(
     instance: &mut VmInstance<DefaultStarkEngine, SdkVmBuilder>,
@@ -119,145 +119,100 @@ fn recover_and_prove(
     Ok((proofs, instance))
 }
 
-pub(crate) struct CachedConfig {
-    sdk: Sdk,
-    exe: Arc<VmExe<F>>,
-    stdin: StdIn<F>,
-}
+/// Self-contained proving: deserialize context, build state, prove, drop everything.
+/// This is the primary entry point — the worker receives all context in one request.
+#[instrument(name = "worker_prove", skip_all, fields(num_segments = req.segments.len()))]
+pub(crate) fn prove_from_request(req: ProveRequest) -> Result<ProveSegmentsResponse> {
+    let total_start = Instant::now();
+    let num_segments = req.segments.len();
 
-pub(crate) struct WorkerState {
-    instance: VmInstance<DefaultStarkEngine, SdkVmBuilder>,
-    cached: CachedConfig,
-}
+    if num_segments == 0 {
+        return Err(eyre::eyre!("received empty segment list"));
+    }
 
-impl WorkerState {
-    #[instrument(name = "worker_setup", skip_all)]
-    pub(crate) fn from_setup(payload: SetupPayload) -> Result<Self> {
-        let start = Instant::now();
+    for window in req.segments.windows(2) {
+        if window[0].instret_start + window[0].num_insns != window[1].instret_start {
+            return Err(eyre::eyre!(
+                "Segment descriptors not contiguous: {} + {} != {}",
+                window[0].instret_start,
+                window[0].num_insns,
+                window[1].instret_start
+            ));
+        }
+    }
+
+    info!(
+        "Proving {} segments (pk={} B, exe={} B, stdin={} B)",
+        num_segments,
+        req.app_pk_bytes.len(),
+        req.exe_bytes.len(),
+        req.stdin_bytes.len(),
+    );
+
+    let app_pk: AppProvingKey<SdkVmConfig> =
+        bitcode::deserialize(&req.app_pk_bytes).wrap_err("deserialize app_pk")?;
+    let exe: VmExe<F> = bitcode::deserialize(&req.exe_bytes).wrap_err("deserialize exe")?;
+    let stdin: StdIn<F> = bitcode::deserialize(&req.stdin_bytes).wrap_err("deserialize stdin")?;
+
+    let sdk = Sdk::builder()
+        .app_pk(app_pk)
+        .agg_params(AggregationSystemParams::default())
+        .build()
+        .wrap_err("build SDK")?;
+
+    let exe = Arc::new(exe);
+    let app_pk = sdk.app_pk();
+    let instance = new_local_prover(*sdk.app_vm_builder(), &app_pk.app_vm_pk, exe.clone())
+        .wrap_err("create VmInstance")?;
+
+    info!("Setup done in {:.2}s", total_start.elapsed().as_secs_f64());
+
+    let (proofs, instance) = recover_and_prove(instance, &req.segments, &sdk, &exe, &stdin)?;
+
+    info!(
+        "{} segments proved in {:?}",
+        num_segments,
+        total_start.elapsed()
+    );
+
+    let upv_bytes = if req.compute_user_public_values {
+        let upv = extract_user_public_values(&instance)?;
+        Some(bitcode::serialize(&upv).wrap_err("serialize user public values")?)
+    } else {
+        None
+    };
+
+    let (final_proofs, is_leaf_proofs) = if req.aggregate_to_leaf && proofs.len() > 1 {
+        let leaf_start = Instant::now();
+        let leaf_proofs = aggregate_to_leaf(&sdk, &proofs, req.num_children_leaf)?;
         info!(
-            "Setup: pk={} B, exe={} B, stdin={} B",
-            payload.app_pk_bytes.len(),
-            payload.exe_bytes.len(),
-            payload.stdin_bytes.len()
+            "Leaf agg: {} → {} in {:?}",
+            proofs.len(),
+            leaf_proofs.len(),
+            leaf_start.elapsed()
         );
+        (leaf_proofs, true)
+    } else {
+        (proofs, false)
+    };
 
-        let app_pk: AppProvingKey<SdkVmConfig> =
-            bitcode::deserialize(&payload.app_pk_bytes).wrap_err("deserialize app_pk")?;
-        let exe: VmExe<F> = bitcode::deserialize(&payload.exe_bytes).wrap_err("deserialize exe")?;
-        let stdin: StdIn<F> =
-            bitcode::deserialize(&payload.stdin_bytes).wrap_err("deserialize stdin")?;
+    drop(instance);
+    drop(sdk);
 
-        let sdk = Sdk::builder()
-            .app_pk(app_pk)
-            .agg_params(AggregationSystemParams::default())
-            .build()
-            .wrap_err("build SDK from proving key")?;
-
-        let exe = Arc::new(exe);
-        let app_pk = sdk.app_pk();
-        let instance = new_local_prover(*sdk.app_vm_builder(), &app_pk.app_vm_pk, exe.clone())
-            .wrap_err("create VmInstance")?;
-
-        info!("Setup complete in {:?}", start.elapsed());
-        Ok(Self {
-            instance,
-            cached: CachedConfig { sdk, exe, stdin },
+    let proof_bytes = final_proofs
+        .into_iter()
+        .map(|p| {
+            p.encode_to_vec()
+                .map_err(|e| eyre::eyre!("encode proof: {}", e))
         })
-    }
+        .collect::<Result<Vec<_>>>()?;
 
-    #[instrument(name = "worker_warm_setup", skip_all)]
-    pub(crate) fn from_cached(cached: CachedConfig) -> Result<Self> {
-        let start = Instant::now();
-        let app_pk = cached.sdk.app_pk();
-        let instance = new_local_prover(
-            *cached.sdk.app_vm_builder(),
-            &app_pk.app_vm_pk,
-            cached.exe.clone(),
-        )
-        .wrap_err("create VmInstance from cached config")?;
-        info!("Warm re-setup in {:?}", start.elapsed());
-        Ok(Self { instance, cached })
-    }
-
-    #[instrument(name = "worker_prove_segments", skip_all, fields(num_segments = task.segments.len()))]
-    pub(crate) fn prove_segments(
-        self,
-        task: SegmentTask,
-    ) -> (Result<ProveSegmentsResponse>, CachedConfig) {
-        let total_start = Instant::now();
-        let num_segments = task.segments.len();
-        let Self { instance, cached } = self;
-
-        if num_segments == 0 {
-            return (Err(eyre::eyre!("received empty segment task")), cached);
-        }
-
-        // Validate segment descriptor contiguity (soundness check)
-        for window in task.segments.windows(2) {
-            if window[0].instret_start + window[0].num_insns != window[1].instret_start {
-                return (Err(eyre::eyre!(
-                    "Segment descriptors not contiguous: seg ending at instret {} + {} != next starting at {}",
-                    window[0].instret_start, window[0].num_insns, window[1].instret_start
-                )), cached);
-            }
-        }
-
-        info!("Proving {} segments", num_segments);
-
-        let result = (|| -> Result<ProveSegmentsResponse> {
-            let (proofs, instance) = recover_and_prove(
-                instance,
-                &task.segments,
-                &cached.sdk,
-                &cached.exe,
-                &cached.stdin,
-            )?;
-
-            info!(
-                "{} segments proved in {:?}",
-                num_segments,
-                total_start.elapsed()
-            );
-
-            let upv_bytes = if task.compute_user_public_values {
-                let upv = extract_user_public_values(&instance)?;
-                Some(bitcode::serialize(&upv).wrap_err("serialize user public values")?)
-            } else {
-                None
-            };
-
-            let (final_proofs, is_leaf_proofs) = if task.aggregate_to_leaf && proofs.len() > 1 {
-                let leaf_start = Instant::now();
-                let leaf_proofs = aggregate_to_leaf(&cached.sdk, &proofs, task.num_children_leaf)?;
-                info!(
-                    "Leaf agg: {} → {} in {:?}",
-                    proofs.len(),
-                    leaf_proofs.len(),
-                    leaf_start.elapsed()
-                );
-                (leaf_proofs, true)
-            } else {
-                (proofs, false)
-            };
-
-            let proof_bytes = final_proofs
-                .into_iter()
-                .map(|p| {
-                    p.encode_to_vec()
-                        .map_err(|e| eyre::eyre!("encode proof: {}", e))
-                })
-                .collect::<Result<Vec<_>>>()?;
-
-            Ok(ProveSegmentsResponse {
-                proof_bytes,
-                user_public_values_bytes: upv_bytes,
-                proving_time_ms: total_start.elapsed().as_millis() as u64,
-                is_leaf_proofs,
-            })
-        })();
-
-        (result, cached)
-    }
+    Ok(ProveSegmentsResponse {
+        proof_bytes,
+        user_public_values_bytes: upv_bytes,
+        proving_time_ms: total_start.elapsed().as_millis() as u64,
+        is_leaf_proofs,
+    })
 }
 
 fn aggregate_to_leaf(
@@ -324,4 +279,181 @@ pub(crate) fn run_grind_kernel(req: &crate::types::GrindRequest) -> Result<Optio
         Err(openvm_cuda_backend::sponge::GrindError::WitnessNotFound) => Ok(None),
         Err(e) => Err(eyre::eyre!("grind kernel error: {:?}", e)),
     }
+}
+
+// ─── Root proving delegation (standalone — no WorkerState needed) ─────────────
+
+#[cfg(feature = "cuda")]
+fn decode_metadata(bytes: &[u8]) -> Result<openvm_sdk::prover::InternalLayerMetadata> {
+    if bytes.len() < 9 {
+        return Err(eyre::eyre!("metadata too short: {} bytes", bytes.len()));
+    }
+    let internal_recursive_layer = u32::from_le_bytes(bytes[0..4].try_into().unwrap());
+    let internal_node_idx = u32::from_le_bytes(bytes[4..8].try_into().unwrap());
+    let proofs_type = match bytes[8] {
+        0 => openvm_continuations::circuit::inner::ProofsType::Vm,
+        1 => openvm_continuations::circuit::inner::ProofsType::Deferral,
+        2 => openvm_continuations::circuit::inner::ProofsType::Mix,
+        3 => openvm_continuations::circuit::inner::ProofsType::Combined,
+        _ => return Err(eyre::eyre!("invalid proofs_type byte: {}", bytes[8])),
+    };
+    Ok(openvm_sdk::prover::InternalLayerMetadata {
+        internal_recursive_layer,
+        internal_node_idx,
+        proofs_type,
+    })
+}
+
+#[cfg(feature = "cuda")]
+fn do_root_prove(
+    task: &crate::types::RootProveTask,
+    sdk: &Sdk,
+) -> Result<crate::types::RootProveResponse> {
+    use openvm_stark_backend::codec::Decode;
+    use openvm_verify_stark_host::VmStarkProof;
+
+    let start = Instant::now();
+
+    info!(
+        "Deserializing VmStarkProof ({} bytes)...",
+        task.proof_bytes.len()
+    );
+    let proof: VmStarkProof = VmStarkProof::decode_from_bytes(&task.proof_bytes)
+        .map_err(|e| eyre::eyre!("decode VmStarkProof: {}", e))?;
+
+    let mut metadata = decode_metadata(&task.metadata_bytes)?;
+
+    let root_prover = sdk.root_prover();
+    let agg_prover = sdk.agg_prover();
+    #[allow(unused_mut)]
+    let mut root_engine = root_prover.create_engine();
+
+    #[cfg(feature = "cuda")]
+    root_engine.device_mut().set_cache_rs_code_matrix(true);
+
+    info!("Starting root proving...");
+    let root_proof = root_prover
+        .prove(proof, &root_engine, 8, |p| {
+            agg_prover.wrap_proof(p, &mut metadata)
+        })
+        .wrap_err("root proving failed")?;
+
+    let proving_ms = start.elapsed().as_millis() as u64;
+    let root_proof_bytes = root_proof.encode_to_vec().wrap_err("encode root proof")?;
+    info!("Root proof encoded: {} bytes", root_proof_bytes.len());
+
+    Ok(crate::types::RootProveResponse {
+        root_proof_bytes,
+        proving_time_ms: proving_ms,
+    })
+}
+
+/// Build SDK from scratch and run root proving (stateless path).
+///
+/// Root + aggregation provers are circuit-independent — they depend only on
+/// AggregationSystemParams, not the specific app config. We provide a
+/// minimal riscv32 config to satisfy the SDK builder requirement.
+#[cfg(feature = "cuda")]
+pub(crate) fn prove_root_standalone(
+    task: &crate::types::RootProveTask,
+) -> Result<crate::types::RootProveResponse> {
+    use openvm_sdk::config::{AggregationSystemParams, AppConfig};
+    use openvm_stark_sdk::config::{app_params_with_100_bits_security, MAX_APP_LOG_STACKED_HEIGHT};
+
+    let app_params = app_params_with_100_bits_security(MAX_APP_LOG_STACKED_HEIGHT);
+    let app_config = AppConfig::new(SdkVmConfig::riscv32(), app_params);
+
+    let sdk = Sdk::builder()
+        .app_config(app_config)
+        .agg_params(AggregationSystemParams::default())
+        .build()
+        .wrap_err("build SDK for root proving")?;
+
+    do_root_prove(task, &sdk)
+}
+
+// ─── Halo2 proving (in-process) ──────────────────────────────────────────────
+//
+// Halo2 needs ~21 GiB VRAM. Before this function is called, the server handler
+// drops all STARK state and calls release_and_reinit_pool() — which frees all
+// VPMM pages, small allocations, and VA reservations — returning physical GPU
+// memory to the driver for Halo2's own hipMalloc allocations.
+
+#[cfg(feature = "evm")]
+pub(crate) fn prove_halo2_inline(
+    task: &crate::types::Halo2ProveTask,
+) -> Result<crate::types::Halo2ProveResponse> {
+    use std::path::Path;
+
+    use openvm_stark_backend::codec::Decode;
+
+    let halo2_pk_path = Path::new(&task.halo2_pk_path);
+    if !halo2_pk_path.exists() {
+        return Err(eyre::eyre!(
+            "Halo2 PK not found at {:?} on this worker",
+            halo2_pk_path
+        ));
+    }
+
+    let halo2_start = Instant::now();
+
+    info!(
+        "Decoding root proof ({:.1} MB)...",
+        task.root_proof_bytes.len() as f64 / 1_048_576.0
+    );
+    let root_proof: openvm_stark_backend::proof::Proof<openvm_continuations::RootSC> =
+        openvm_stark_backend::proof::Proof::decode_from_bytes(&task.root_proof_bytes)
+            .map_err(|e| eyre::eyre!("decode root proof: {}", e))?;
+
+    info!("Loading Halo2 PK from {:?}...", halo2_pk_path);
+    let pk_data = std::fs::read(halo2_pk_path).map_err(|e| eyre::eyre!("read Halo2 PK: {}", e))?;
+    info!("PK loaded ({:.1} GB)", pk_data.len() as f64 / 1e9);
+
+    let pk: openvm_sdk::keygen::Halo2ProvingKey = {
+        let mut cursor = std::io::Cursor::new(&pk_data);
+        openvm_sdk::keygen::Halo2ProvingKey::decode(&mut cursor)
+            .map_err(|e| eyre::eyre!("decode Halo2 PK: {}", e))?
+    };
+    drop(pk_data);
+
+    let params_reader = match task.kzg_params_dir.as_deref() {
+        Some(dir) => openvm_sdk::halo2_params::CacheHalo2ParamsReader::new(dir),
+        None => openvm_sdk::halo2_params::CacheHalo2ParamsReader::new_with_default_params_dir(),
+    };
+
+    info!("Generating Halo2 verifier...");
+    let verifier = openvm_sdk::solidity::generate_halo2_verifier_solidity(&pk, &params_reader)?;
+
+    let prover = openvm_sdk::prover::Halo2Prover::new(&params_reader, pk);
+
+    info!("Halo2 proof generation...");
+    let prove_start = Instant::now();
+    let evm_proof = prover.prove_for_evm(&root_proof)?;
+    info!("Halo2 proof generated in {:?}", prove_start.elapsed());
+
+    info!("EVM verification...");
+    let verify_start = Instant::now();
+    let gas_cost = openvm_sdk::Sdk::verify_evm_halo2_proof(&verifier, evm_proof, None)?;
+    info!(
+        "EVM verify: {:?}, gas: {}",
+        verify_start.elapsed(),
+        gas_cost
+    );
+
+    let proving_ms = halo2_start.elapsed().as_millis() as u64;
+    info!("Halo2 total: {}ms, gas: {}", proving_ms, gas_cost);
+
+    Ok(crate::types::Halo2ProveResponse {
+        gas_cost,
+        proving_time_ms: proving_ms,
+    })
+}
+
+#[cfg(not(feature = "evm"))]
+pub(crate) fn prove_halo2_inline(
+    _task: &crate::types::Halo2ProveTask,
+) -> Result<crate::types::Halo2ProveResponse> {
+    Err(eyre::eyre!(
+        "Halo2 proving requires the `evm` feature. Rebuild with --features halo2-gpu"
+    ))
 }
