@@ -1,7 +1,20 @@
 [net]
 git-fetch-with-cli = true
 
-# Use local stark-backend for HIP/AMD GPU support and our optimizations
+# ═══════════════════════════════════════════════════════════════════════════════
+# LOCAL PATCH OVERRIDES
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# Upstream stark-backend and halo2-gpu target NVIDIA CUDA only.
+# Local forks add AMD ROCm/HIP support (gfx1100), VPMM memory pool lifecycle,
+# kernel compatibility with ROCm 7.2.4, and witness_step=1 grinding.
+#
+# Without these: HIP kernels fail to compile (__match_any_sync, __ffs errors).
+#
+# All workspaces use .cargo/config.toml for patches (not Cargo.toml).
+# Keep in sync: openvm/, halo2-gpu/, local-bench-workspace/
+# ═══════════════════════════════════════════════════════════════════════════════
+
 [patch."https://github.com/openvm-org/stark-backend.git"]
 openvm-stark-backend = { path = "../stark-backend/crates/stark-backend" }
 openvm-stark-sdk = { path = "../stark-backend/crates/stark-sdk" }
@@ -9,7 +22,7 @@ openvm-cpu-backend = { path = "../stark-backend/crates/cpu-backend" }
 openvm-cuda-backend = { path = "../stark-backend/crates/cuda-backend" }
 openvm-cuda-builder = { path = "../stark-backend/crates/cuda-builder" }
 openvm-cuda-common = { path = "../stark-backend/crates/cuda-common" }
+openvm-codec-derive = { path = "../stark-backend/crates/stark-backend/codec-derive" }
 
-# Use local halo2-gpu for AMD/HIP support
 [patch."https://github.com/axiom-crypto/halo2-gpu.git"]
 halo2-axiom-gpu = { path = "../halo2-gpu/halo2_proofs" }
