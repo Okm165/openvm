@@ -6,7 +6,16 @@
 
 /**
  * @file histogram.cuh
- * @brief Device-side helpers for local histogram accumulation in CUDA.
+ * @brief Device-side helpers for local histogram accumulation in CUDA/HIP.
+ *
+ * On CUDA sm_70+: warp-level deduplicated atomicAdd via native __match_any_sync.
+ * On HIP/pre-Volta: plain per-thread atomicAdd (portable fallback).
+ *
+ * NOTE: A portable __match_any_sync emulation via __shfl_sync + __ballot_sync
+ * was attempted but causes HSA_STATUS_ERROR_EXCEPTION on AMD RDNA3 (gfx1100)
+ * during trace generation. Root cause requires rocgdb investigation.
+ * The plain atomicAdd path is functionally correct; the warp dedup is a
+ * throughput optimization only (reduces global atomic contention).
  */
 
 static constexpr uint WARP_MASK = WARP_SIZE - 1;
@@ -24,18 +33,16 @@ struct Histogram {
 
     __device__ void add_count(uint32_t idx) {
         if (idx < num_bins) {
-#if defined(__HIPCC__)
-            atomicAdd(&global_hist[idx], 1u);
-#else
-            // Warp-level deduplicated atomicAdd
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 700
             auto curr_mask = __activemask();
             auto same_mask = __match_any_sync(curr_mask, idx);
             auto leader = __ffs(same_mask) - 1;
 
-            // Only the leader does atomicAdd
             if ((threadIdx.x & WARP_MASK) == leader) {
                 atomicAdd(&global_hist[idx], __popc(same_mask));
             }
+#else
+            atomicAdd(&global_hist[idx], 1u);
 #endif
         }
     }
