@@ -37,7 +37,7 @@ sys-info = "0.9"
 default = ["parallel", "jemalloc"]
 parallel = ["openvm-sdk/parallel"]
 jemalloc = ["openvm-sdk/jemalloc"]
-cuda = ["openvm-sdk/cuda", "dep:openvm-cuda-common", "dep:openvm-cuda-backend", "openvm-cuda-backend?/baby-bear-bn254-poseidon2"]
+cuda = ["openvm-sdk/cuda", "openvm-sdk/root-prover", "dep:openvm-cuda-common", "dep:openvm-cuda-backend", "openvm-cuda-backend?/baby-bear-bn254-poseidon2"]
 evm = ["openvm-sdk/evm-verify", "openvm-sdk/evm-prove"]
 halo2-gpu = ["evm", "cuda", "openvm-sdk/halo2-gpu"]
 
