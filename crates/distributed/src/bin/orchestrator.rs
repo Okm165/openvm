@@ -49,10 +49,6 @@ struct Args {
     #[arg(long)]
     halo2_pk_cache: Option<std::path::PathBuf>,
 
-    /// Run Halo2 in subprocess (exec) to free GPU memory
-    #[arg(long, requires = "evm")]
-    halo2_subprocess: bool,
-
     /// Generate Halo2 PK and exit
     #[cfg_attr(feature = "evm", arg(long))]
     #[cfg_attr(not(feature = "evm"), arg(long, hide = true))]
@@ -116,24 +112,78 @@ async fn check_workers(
     worker_urls: &[String],
     secret: &Option<String>,
 ) -> Result<Vec<WorkerClient>> {
-    let mut reachable = Vec::new();
     let our_version = env!("CARGO_PKG_VERSION");
 
-    for url in worker_urls {
-        let client = WorkerClient::new(url, secret.clone())?;
-        match client.health().await {
-            Ok(health) => {
-                if health.version.as_deref() != Some(our_version) {
-                    tracing::warn!("Version mismatch with {}", client.base_url());
+    let clients: Vec<_> = worker_urls
+        .iter()
+        .filter_map(|url| WorkerClient::new(url, secret.clone()).ok())
+        .collect();
+
+    let mut handles = Vec::with_capacity(clients.len());
+    for client in clients {
+        handles.push(tokio::spawn(async move {
+            match client.health().await {
+                Ok(health) => {
+                    if health.version.as_deref() != Some(our_version) {
+                        tracing::warn!("Version mismatch with {}", client.base_url());
+                    }
+                    info!("{} — {}", client.base_url(), health.status);
+                    Some(client)
                 }
-                info!("{} — {}", client.base_url(), health.status);
-                reachable.push(client);
+                Err(e) => {
+                    tracing::warn!("{} unreachable: {}", client.base_url(), e);
+                    None
+                }
             }
-            Err(e) => tracing::warn!("{} unreachable: {}", client.base_url(), e),
-        }
+        }));
     }
 
+    let mut reachable = Vec::new();
+    for handle in handles {
+        if let Ok(Some(client)) = handle.await {
+            reachable.push(client);
+        }
+    }
     Ok(reachable)
+}
+
+async fn preload_halo2_on_workers(
+    workers: &[WorkerClient],
+    halo2_pk_path: Option<&std::path::Path>,
+    kzg_params_dir: Option<&std::path::Path>,
+) -> Result<()> {
+    let Some(pk_path) = halo2_pk_path else {
+        return Ok(());
+    };
+
+    let request = openvm_distributed::types::Halo2PreloadRequest {
+        halo2_pk_path: pk_path.to_string_lossy().to_string(),
+        kzg_params_dir: kzg_params_dir.map(|p| p.to_string_lossy().to_string()),
+    };
+
+    let mut handles = Vec::with_capacity(workers.len());
+    for (i, worker) in workers.iter().enumerate() {
+        let req = request.clone();
+        let url = worker.base_url().to_string();
+        let w = worker.clone();
+        handles.push(tokio::spawn(async move {
+            match w.halo2_preload(&req).await {
+                Ok(resp) if resp.ready => {
+                    info!("Worker {} ({}) — Halo2 OK", i, url);
+                }
+                Ok(_) => {
+                    tracing::warn!("Worker {} ({}) — Halo2 NOT ready", i, url);
+                }
+                Err(e) => {
+                    tracing::warn!("Worker {} ({}) — Halo2 check failed: {}", i, url, e);
+                }
+            }
+        }));
+    }
+    for handle in handles {
+        let _ = handle.await;
+    }
+    Ok(())
 }
 
 #[tokio::main]
@@ -160,6 +210,16 @@ async fn main() -> Result<()> {
         info!("{} worker(s) available", w.len());
         w
     };
+
+    // Preload Halo2 PK check on all workers (fast sanity check)
+    if args.evm && !args.keygen_halo2 {
+        preload_halo2_on_workers(
+            &workers,
+            args.halo2_pk_cache.as_deref(),
+            args.kzg_params_dir.as_deref(),
+        )
+        .await?;
+    }
 
     let vm_config = load_vm_config(&args)?;
     let stdin = load_stdin(&args)?;
@@ -208,22 +268,24 @@ async fn main() -> Result<()> {
 
     #[cfg(feature = "evm")]
     if args.evm {
-        let grind_workers = prover.remote_workers();
-        prover.shutdown_local_workers().await;
-        for w in &grind_workers {
-            let _ = w.release_gpu().await;
-        }
-        openvm_distributed::release_cuda_memory();
+        let workers: Vec<_> = prover.workers().to_vec();
+        drop(prover);
+        // Release all GPU memory so workers on the same node have full VRAM
+        // for root/Halo2. The fresh pool's VA reservation is virtual-only and
+        // does not consume physical GPU memory.
+        openvm_distributed::release_and_reinit_pool();
 
-        let sdk = prover.into_sdk();
         let mut metadata = result.metadata;
         let config = openvm_distributed::evm::EvmPipelineConfig {
             halo2_pk_cache: args.halo2_pk_cache.as_deref(),
             kzg_params_dir: args.kzg_params_dir.as_deref(),
-            halo2_subprocess: args.halo2_subprocess,
-            grind_workers,
+            workers: workers.clone(),
         };
-        openvm_distributed::evm::run(sdk, result.proof, &mut metadata, &config)?;
+        openvm_distributed::evm::run(result.proof, &mut metadata, &config).await?;
+
+        for w in &workers {
+            let _ = w.release_gpu().await;
+        }
     }
 
     #[cfg(not(feature = "evm"))]
