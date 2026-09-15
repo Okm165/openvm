@@ -14,11 +14,22 @@ pub struct EvmPipelineConfig<'a> {
     pub workers: Vec<WorkerClient>,
 }
 
+pub struct EvmPipelineResult {
+    pub evm_proof_json: Option<String>,
+    pub gas_cost: u64,
+    /// Hex-encoded deployment bytecode of the verifier contract matching our PK.
+    pub verifier_bytecode_hex: Option<String>,
+}
+
+/// Runs the full EVM pipeline:
+///   Phase 1: Root proving (worker GPU)
+///   Phase 2: Halo2 proving (worker GPU)
+///   Phase 3: EVM verification (orchestrator CPU — Revm)
 pub async fn run(
     proof: VmStarkProof,
     metadata: &mut InternalLayerMetadata,
     config: &EvmPipelineConfig<'_>,
-) -> Result<()> {
+) -> Result<EvmPipelineResult> {
     if config.workers.is_empty() {
         return Err(eyre::eyre!(
             "EVM pipeline requires at least one worker (2+ recommended)"
@@ -39,9 +50,7 @@ pub async fn run(
         .halo2_pk_cache
         .ok_or_else(|| eyre::eyre!("--halo2-pk-cache required for EVM pipeline"))?;
 
-    // ── Phase 1: Root proving ────────────────────────────────────────────
-    //
-    // Try the primary worker; if it fails, retry on the next.
+    // ── Phase 1: Root proving (worker GPU) ────────────────────────────────
 
     let proof_bytes = proof.encode_to_vec().wrap_err("encode VmStarkProof")?;
     let metadata_bytes = encode_metadata(metadata);
@@ -89,12 +98,7 @@ pub async fn run(
     let root_resp = root_resp
         .ok_or_else(|| eyre::eyre!("Root proving failed on all {} workers", num_workers))?;
 
-    // ── Phase 2: Halo2 proving ───────────────────────────────────────────
-    //
-    // The worker drops all STARK state, releases the VPMM pool (returning
-    // all physical pages to the driver), and proves Halo2 in-process.
-    //
-    // If Halo2 fails on the primary target, retry on the next worker.
+    // ── Phase 2: Halo2 proving (worker GPU) ───────────────────────────────
 
     let halo2_task = crate::types::Halo2ProveTask {
         root_proof_bytes: root_resp.root_proof_bytes,
@@ -120,10 +124,9 @@ pub async fn run(
         match halo2_worker.prove_halo2(&halo2_task).await {
             Ok(resp) => {
                 info!(
-                    "Halo2 proving: {:?} (worker: {}ms, gas={})",
+                    "Halo2 proving: {:?} (worker: {}ms)",
                     halo2_start.elapsed(),
                     resp.proving_time_ms,
-                    resp.gas_cost
                 );
                 halo2_resp = Some(resp);
                 break;
@@ -145,13 +148,72 @@ pub async fn run(
     let halo2_resp = halo2_resp
         .ok_or_else(|| eyre::eyre!("Halo2 proving failed on all {} workers", num_workers))?;
 
+    let evm_proof_json = halo2_resp
+        .evm_proof_json
+        .ok_or_else(|| eyre::eyre!("Worker returned no EVM proof data"))?;
+
+    // ── Phase 3: EVM verification (orchestrator CPU) ──────────────────────
+    //
+    // Verifier generation and Revm simulation run on the orchestrator so
+    // that workers stay focused on GPU proving only.
+
+    info!("Orchestrator: generating Halo2 verifier from PK...");
+    let verify_start = Instant::now();
+
+    let evm_proof: openvm_sdk::types::EvmProof = serde_json::from_str(&evm_proof_json)
+        .map_err(|e| eyre::eyre!("deserialize EvmProof: {}", e))?;
+
+    let pk_data = std::fs::read(cache_path)
+        .map_err(|e| eyre::eyre!("read Halo2 PK: {}", e))?;
+    let pk: openvm_sdk::keygen::Halo2ProvingKey = {
+        let mut cursor = std::io::Cursor::new(&pk_data);
+        openvm_stark_backend::codec::Decode::decode(&mut cursor)
+            .map_err(|e| eyre::eyre!("decode Halo2 PK: {}", e))?
+    };
+    drop(pk_data);
+
+    let params_reader = match config.kzg_params_dir {
+        Some(dir) => openvm_sdk::halo2_params::CacheHalo2ParamsReader::new(dir),
+        None => openvm_sdk::halo2_params::CacheHalo2ParamsReader::new_with_default_params_dir(),
+    };
+
+    let verifier =
+        openvm_sdk::solidity::generate_halo2_verifier_solidity(&pk, &params_reader)?;
+    drop(pk);
+    info!("Verifier generated in {:?}", verify_start.elapsed());
+
+    let verifier_bytecode_hex: String = verifier
+        .artifact
+        .bytecode
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect();
+    info!(
+        "Verifier deployment bytecode: {} bytes",
+        verifier.artifact.bytecode.len()
+    );
+
+    info!("Orchestrator: EVM verification via Revm...");
+    let revm_start = Instant::now();
+    let gas_cost =
+        openvm_sdk::Sdk::verify_evm_halo2_proof(&verifier, evm_proof, None)?;
+    info!(
+        "EVM verify: {:?}, gas: {}",
+        revm_start.elapsed(),
+        gas_cost
+    );
+
     info!(
         "=== EVM PIPELINE TOTAL: {:?} === Gas: {}",
         evm_start.elapsed(),
-        halo2_resp.gas_cost
+        gas_cost
     );
 
-    Ok(())
+    Ok(EvmPipelineResult {
+        evm_proof_json: Some(evm_proof_json),
+        gas_cost,
+        verifier_bytecode_hex: Some(verifier_bytecode_hex),
+    })
 }
 
 fn encode_metadata(metadata: &InternalLayerMetadata) -> Vec<u8> {

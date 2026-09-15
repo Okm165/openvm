@@ -421,31 +421,24 @@ pub(crate) fn prove_halo2_inline(
         None => openvm_sdk::halo2_params::CacheHalo2ParamsReader::new_with_default_params_dir(),
     };
 
-    info!("Generating Halo2 verifier...");
-    let verifier = openvm_sdk::solidity::generate_halo2_verifier_solidity(&pk, &params_reader)?;
-
     let prover = openvm_sdk::prover::Halo2Prover::new(&params_reader, pk);
 
     info!("Halo2 proof generation...");
     let prove_start = Instant::now();
     let evm_proof = prover.prove_for_evm(&root_proof)?;
-    info!("Halo2 proof generated in {:?}", prove_start.elapsed());
+    let prove_elapsed = prove_start.elapsed();
+    info!("Halo2 proof generated in {:?}", prove_elapsed);
 
-    info!("EVM verification...");
-    let verify_start = Instant::now();
-    let gas_cost = openvm_sdk::Sdk::verify_evm_halo2_proof(&verifier, evm_proof, None)?;
-    info!(
-        "EVM verify: {:?}, gas: {}",
-        verify_start.elapsed(),
-        gas_cost
-    );
+    let evm_proof_json = serde_json::to_string_pretty(&evm_proof)
+        .map_err(|e| eyre::eyre!("serialize EvmProof: {}", e))?;
+    info!("EvmProof serialized ({} bytes)", evm_proof_json.len());
 
     let proving_ms = halo2_start.elapsed().as_millis() as u64;
-    info!("Halo2 total: {}ms, gas: {}", proving_ms, gas_cost);
+    info!("Halo2 total: {}ms", proving_ms);
 
     Ok(crate::types::Halo2ProveResponse {
-        gas_cost,
         proving_time_ms: proving_ms,
+        evm_proof_json: Some(evm_proof_json),
     })
 }
 

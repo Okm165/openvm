@@ -388,8 +388,8 @@ async fn prove_halo2_handler(
         Ok(mut response) => {
             response.proving_time_ms = start.elapsed().as_millis() as u64;
             info!(
-                "Halo2 proving done in {}ms, gas={}",
-                response.proving_time_ms, response.gas_cost
+                "Halo2 proving done in {}ms",
+                response.proving_time_ms
             );
             match bitcode::serialize(&response) {
                 Ok(body) => bitcode_ok_response(body),

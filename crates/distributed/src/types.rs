@@ -110,6 +110,8 @@ pub struct Halo2ProveTask {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Halo2ProveResponse {
-    pub gas_cost: u64,
     pub proving_time_ms: u64,
+    /// Serialized EvmProof JSON returned by the worker after Halo2 proving.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evm_proof_json: Option<String>,
 }

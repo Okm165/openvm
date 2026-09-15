@@ -49,6 +49,10 @@ struct Args {
     #[arg(long)]
     halo2_pk_cache: Option<std::path::PathBuf>,
 
+    /// Write EVM proof JSON to this path (for on-chain verification)
+    #[arg(long, requires = "evm")]
+    evm_proof: Option<std::path::PathBuf>,
+
     /// Generate Halo2 PK and exit
     #[cfg_attr(feature = "evm", arg(long))]
     #[cfg_attr(not(feature = "evm"), arg(long, hide = true))]
@@ -281,7 +285,29 @@ async fn main() -> Result<()> {
             kzg_params_dir: args.kzg_params_dir.as_deref(),
             workers: workers.clone(),
         };
-        openvm_distributed::evm::run(result.proof, &mut metadata, &config).await?;
+        let evm_result =
+            openvm_distributed::evm::run(result.proof, &mut metadata, &config).await?;
+
+        if let Some(ref out_path) = args.evm_proof {
+            if let Some(ref json) = evm_result.evm_proof_json {
+                std::fs::write(out_path, json)
+                    .map_err(|e| eyre::eyre!("write EVM proof to {:?}: {}", out_path, e))?;
+                info!("EVM proof written to {:?} ({} bytes)", out_path, json.len());
+            } else {
+                tracing::warn!("--evm-proof specified but no proof data available");
+            }
+            if let Some(ref hex) = evm_result.verifier_bytecode_hex {
+                let bc_path = out_path.with_extension("verifier.bin");
+                std::fs::write(&bc_path, hex)
+                    .map_err(|e| eyre::eyre!("write verifier bytecode: {}", e))?;
+                info!(
+                    "Verifier bytecode written to {:?} ({} hex chars = {} bytes)",
+                    bc_path,
+                    hex.len(),
+                    hex.len() / 2
+                );
+            }
+        }
 
         for w in &workers {
             let _ = w.release_gpu().await;
